@@ -1,0 +1,11 @@
+{
+  "name": "claudecost-helper",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "prettier": "3.6.2"
+  },
+  "dependencies": {
+    "ccusage": "18.0.10"
+  }
+}
