@@ -1,0 +1,20 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "claudecost-helper",
+      "dependencies": {
+        "ccusage": "18.0.10",
+      },
+      "devDependencies": {
+        "prettier": "3.6.2",
+      },
+    },
+  },
+  "packages": {
+    "ccusage": ["ccusage@18.0.10", "", { "bin": { "ccusage": "dist/index.js" } }, "sha512-bVNqaBFLo3lnSV6afiV/wtLselkGQLV4iXltcTRJwoqbDnnutw6ZNliF1CYwpF/7M0xsmXZnExR0CxdDSdT9xg=="],
+
+    "prettier": ["prettier@3.6.2", "", { "bin": { "prettier": "bin/prettier.cjs" } }, "sha512-I7AIg5boAr5R0FFtJ6rCfD+LFsWHp81dolrFD8S79U9tb8Az2nGrJncnMSnys+bpQJfRUzqs9hnA81OAA3hCuQ=="],
+  }
+}
