@@ -16,7 +16,7 @@ Then:
 
 1. Download `ClaudeCost.app.zip`
 2. Unzip it
-3. Move `ClaudeCost.app` to `/Applications` or `~/Applications`
+3. Move `ClaudeCost.app` to `/Applications`
 4. Open `ClaudeCost.app`
 
 On first launch, macOS may ask you to confirm opening the app.
