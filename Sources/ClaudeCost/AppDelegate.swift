@@ -3,7 +3,8 @@ import Foundation
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-  private let refreshInterval: TimeInterval = 60
+  private let pluggedInRefreshInterval: TimeInterval = 60
+  private let batteryRefreshInterval: TimeInterval = 120
 
   private var statusItem: NSStatusItem?
   private var timer: Timer?
@@ -20,15 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     menu.delegate = self
     statusItem.menu = menu
 
-    timer = Timer.scheduledTimer(
-      timeInterval: refreshInterval,
-      target: self,
-      selector: #selector(refreshTimerFired),
-      userInfo: nil,
-      repeats: true
-    )
-
     startAtLoginViewState = loginItemManager.configureOnLaunch()
+    rescheduleRefreshTimer()
     renderTitle()
     refreshUsage()
   }
@@ -47,11 +41,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
   @objc
   private func refreshTimerFired() {
+    rescheduleRefreshTimer()
     refreshUsage()
   }
 
   @objc
   private func refreshMenuItemSelected() {
+    rescheduleRefreshTimer()
     refreshUsage()
   }
 
@@ -67,19 +63,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     NSApplication.shared.terminate(nil)
   }
 
+  private func rescheduleRefreshTimer() {
+    timer?.invalidate()
+    timer = Timer.scheduledTimer(
+      timeInterval: currentRefreshInterval(),
+      target: self,
+      selector: #selector(refreshTimerFired),
+      userInfo: nil,
+      repeats: false
+    )
+  }
+
+  private func currentRefreshInterval() -> TimeInterval {
+    PowerSource.isOnBatteryPower() ? batteryRefreshInterval : pluggedInRefreshInterval
+  }
+
   private func refreshUsage() {
-    guard let nextState = UsageRefreshController.beginRefresh(from: state) else {
+    guard
+      let request = UsageRefreshController.beginRefresh(
+        from: state,
+        isOnBatteryPower: PowerSource.isOnBatteryPower()
+      )
+    else {
       return
     }
 
-    state = nextState
+    state = request.state
     renderTitle()
 
     refreshTask?.cancel()
     refreshTask = Task {
       do {
-        let snapshot = try await UsageFetcher.fetchUsage()
-        applyRefreshSuccess(snapshot)
+        let snapshot = try await UsageFetcher.fetchUsage(
+          offline: request.pricingMode == .offline
+        )
+        applyRefreshSuccess(snapshot, pricingMode: request.pricingMode)
       } catch {
         guard !Task.isCancelled else {
           return
@@ -91,8 +109,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
   }
 
-  private func applyRefreshSuccess(_ snapshot: UsageSnapshot) {
-    state = UsageRefreshController.applySuccess(snapshot: snapshot, to: state)
+  private func applyRefreshSuccess(_ snapshot: UsageSnapshot, pricingMode: PricingRefreshMode) {
+    state = UsageRefreshController.applySuccess(
+      snapshot: snapshot,
+      pricingMode: pricingMode,
+      to: state
+    )
     renderTitle()
     refreshMenuIfNeeded()
   }

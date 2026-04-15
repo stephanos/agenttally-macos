@@ -108,12 +108,16 @@ enum UsageFetcher {
   private static let helperTerminationPollInterval: UInt32 = 50_000
   private static let helperRegistry = HelperProcessRegistry()
 
-  static func fetchUsage() async throws -> UsageSnapshot {
+  static func fetchUsage(offline: Bool = false) async throws -> UsageSnapshot {
     try await withTaskCancellationHandler {
       let monthStart = currentMonthStartString()
       let helperURL = try usageHelperURL()
+      var arguments = [monthStart]
+      if offline {
+        arguments.append("--offline")
+      }
 
-      let output = try await runHelper(at: helperURL, arguments: [monthStart])
+      let output = try await runHelper(at: helperURL, arguments: arguments)
       return try UsagePayloadParser.decodeSnapshot(from: output)
     } onCancel: {
       cancelActiveHelper()

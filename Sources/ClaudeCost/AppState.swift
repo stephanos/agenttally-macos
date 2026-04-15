@@ -1,5 +1,10 @@
 import Foundation
 
+public enum PricingRefreshMode: Equatable {
+  case offline
+  case online
+}
+
 public struct AppState {
   public var isRefreshing = false
   public var todayCost = 0.0
@@ -7,6 +12,7 @@ public struct AppState {
   public var businessDays = 0
   public var avgPerDay = 0.0
   public var lastRefreshAt: Date?
+  public var lastOnlinePricingRefreshAt: Date?
   public var lastError: String?
 
   public init(
@@ -16,6 +22,7 @@ public struct AppState {
     businessDays: Int = 0,
     avgPerDay: Double = 0.0,
     lastRefreshAt: Date? = nil,
+    lastOnlinePricingRefreshAt: Date? = nil,
     lastError: String? = nil
   ) {
     self.isRefreshing = isRefreshing
@@ -24,6 +31,7 @@ public struct AppState {
     self.businessDays = businessDays
     self.avgPerDay = avgPerDay
     self.lastRefreshAt = lastRefreshAt
+    self.lastOnlinePricingRefreshAt = lastOnlinePricingRefreshAt
     self.lastError = lastError
   }
 }

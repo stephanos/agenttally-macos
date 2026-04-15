@@ -13,6 +13,7 @@ swiftc \
   Sources/ClaudeCost/AppState.swift \
   Sources/ClaudeCost/LoginItemManager.swift \
   Sources/ClaudeCost/MenuRowsBuilder.swift \
+  Sources/ClaudeCost/PowerSource.swift \
   Sources/ClaudeCost/StatusPresenter.swift \
   Sources/ClaudeCost/TimeUtils.swift \
   Sources/ClaudeCost/UsageFetcher.swift \

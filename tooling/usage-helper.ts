@@ -19,8 +19,9 @@ async function main() {
   if (!since) {
     throw new Error("expected month start argument in YYYYMMDD format");
   }
+  const offline = process.argv.includes("--offline");
 
-  const dailyData = await loadDailyUsageData({ since });
+  const dailyData = await loadDailyUsageData({ since, offline });
   const today = formatLocalDay(new Date());
 
   const payload: UsagePayload = {
