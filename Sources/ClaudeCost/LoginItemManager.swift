@@ -104,9 +104,14 @@ public final class LoginItemManager {
   public func configureOnLaunch() -> StartAtLoginViewState {
     let hasStoredPreference = defaults.object(forKey: defaultsKey) != nil
     let shouldStartAtLogin = hasStoredPreference ? defaults.bool(forKey: defaultsKey) : true
+    let currentStatus = service.status
 
     if !hasStoredPreference {
       defaults.set(shouldStartAtLogin, forKey: defaultsKey)
+    }
+
+    if currentStatus == .notFound {
+      return StartAtLoginViewState.make(status: .notRegistered)
     }
 
     return setEnabled(shouldStartAtLogin, persist: false)
@@ -118,7 +123,9 @@ public final class LoginItemManager {
     }
 
     do {
-      switch (shouldEnable, service.status) {
+      let currentStatus = service.status
+
+      switch (shouldEnable, currentStatus) {
       case (true, .enabled), (false, .notRegistered):
         break
       case (true, _):
