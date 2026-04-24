@@ -39,7 +39,9 @@ public enum MenuRowsBuilder {
           "Month: $\(StatusPresenter.displayDollarAmount(for: state.monthCost)) (\(state.businessDays) biz days)"
         )
       )
-      rows.append(.disabled("Avg/Day: $\(StatusPresenter.displayDollarAmount(for: state.avgPerDay))"))
+      rows.append(
+        .disabled("Avg/Day: $\(StatusPresenter.displayDollarAmount(for: state.avgPerDay))")
+      )
     }
 
     if let lastError = state.lastError, !lastError.isEmpty {
