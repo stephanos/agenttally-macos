@@ -3,6 +3,14 @@ import Foundation
 public enum StatusPresenter {
   public static let staleDataInterval: TimeInterval = 120
 
+  public static func displayDollarAmount(for amount: Double) -> Int {
+    guard amount > 0 else {
+      return 0
+    }
+
+    return Int(ceil(amount))
+  }
+
   public static func shouldShowWarningSymbol(for state: AppState) -> Bool {
     state.lastError != nil
   }
@@ -17,7 +25,7 @@ public enum StatusPresenter {
     }
 
     if state.lastRefreshAt != nil {
-      return "$\(Int(floor(state.todayCost))) CC"
+      return "$\(displayDollarAmount(for: state.todayCost)) CC"
     }
 
     return "? CC"

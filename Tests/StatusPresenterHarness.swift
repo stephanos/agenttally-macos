@@ -15,7 +15,7 @@ func testStatusPresenter() throws {
     StatusPresenter.title(
       for: freshState,
       now: Date(timeIntervalSinceReferenceDate: 1_100)
-    ) == "$48 CC",
+    ) == "$49 CC",
     "fresh cached data should stay visible while refreshing"
   )
 
@@ -25,6 +25,20 @@ func testStatusPresenter() throws {
       now: Date(timeIntervalSinceReferenceDate: 1_121)
     ) == "? CC",
     "stale data should show loading title"
+  )
+
+  let fractionalState = AppState(
+    isRefreshing: false,
+    todayCost: 0.01,
+    monthCost: 0,
+    businessDays: 0,
+    avgPerDay: 0,
+    lastRefreshAt: Date(timeIntervalSinceReferenceDate: 1_000),
+    lastError: nil
+  )
+  try expect(
+    StatusPresenter.title(for: fractionalState) == "$1 CC",
+    "positive fractional costs should round up for display"
   )
 
   let errorState = AppState(

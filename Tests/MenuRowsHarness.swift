@@ -21,6 +21,18 @@ func testMenuRowsBuilder() throws {
     "menu should start with versioned header"
   )
   try expect(
+    rows.contains(.disabled("Today: $49")),
+    "today cost should round up to the next display dollar"
+  )
+  try expect(
+    rows.contains(.disabled("Month: $209 (4 biz days)")),
+    "month cost should round up to the next display dollar"
+  )
+  try expect(
+    rows.contains(.disabled("Avg/Day: $53")),
+    "average cost should round up to the next display dollar"
+  )
+  try expect(
     rows.contains(
       .action(
         title: "Open at Login",

@@ -31,17 +31,13 @@ public enum MenuRowsBuilder {
     ]
 
     if state.lastRefreshAt != nil, state.lastError == nil {
-      rows.append(.disabled(String(format: "Today: $%.2f", state.todayCost)))
+      rows.append(.disabled("Today: $\(StatusPresenter.displayDollarAmount(for: state.todayCost))"))
       rows.append(
         .disabled(
-          String(
-            format: "Month: $%.2f (%d biz days)",
-            state.monthCost,
-            state.businessDays
-          )
+          "Month: $\(StatusPresenter.displayDollarAmount(for: state.monthCost)) (\(state.businessDays) biz days)"
         )
       )
-      rows.append(.disabled(String(format: "Avg/Day: $%.2f", state.avgPerDay)))
+      rows.append(.disabled("Avg/Day: $\(StatusPresenter.displayDollarAmount(for: state.avgPerDay))"))
     }
 
     if let lastError = state.lastError, !lastError.isEmpty {
