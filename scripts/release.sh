@@ -13,6 +13,11 @@ if [[ -z "${tag_name}" ]]; then
   exit 1
 fi
 
+if [[ ! "${tag_name}" =~ ^v[0-9].* ]]; then
+  echo "release tag must start with 'v' (for example: v0.5)" >&2
+  exit 1
+fi
+
 mise trust -y mise.toml
 mise install
 AGENTTALLY_VERSION="${version}" mise run check
