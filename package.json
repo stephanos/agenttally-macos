@@ -6,6 +6,6 @@
     "prettier": "3.6.2"
   },
   "dependencies": {
-    "ccusage": "18.0.10"
+    "ccusage": "18.0.11"
   }
 }
