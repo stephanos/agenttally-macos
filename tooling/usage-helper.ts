@@ -5,7 +5,6 @@ import path from "path";
 
 type AgentEntry = { name: string; found: boolean; today: number; month: number };
 type UsagePayload = { agents: AgentEntry[] };
-type AgentID = "claude" | "codex";
 
 function formatLocalDay(date: Date): string {
   const formatter = new Intl.DateTimeFormat("en-CA", {
@@ -248,10 +247,12 @@ async function loadCodexData(since: string, offline: boolean): Promise<AgentEntr
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
-const AGENT_LOADERS: Record<AgentID, (since: string, offline: boolean) => Promise<AgentEntry>> = {
+const AGENT_LOADERS = {
   claude: loadClaudeData,
   codex: loadCodexData,
-};
+} as const satisfies Record<string, (since: string, offline: boolean) => Promise<AgentEntry>>;
+
+type AgentID = keyof typeof AGENT_LOADERS;
 
 const ALL_AGENTS = Object.keys(AGENT_LOADERS) as AgentID[];
 

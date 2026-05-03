@@ -87,12 +87,10 @@ private func testAgentsNeedingRefreshDecision() throws {
   let changedCodexFingerprint = UsageDataFingerprint(value: "codex-changed")
   let scan = UsageDataScan(agents: [
     .claude: AgentUsageDataScan(
-      agent: .claude,
       fingerprint: claudeFingerprint,
       lastUsageDetectedAt: nil
     ),
     .codex: AgentUsageDataScan(
-      agent: .codex,
       fingerprint: changedCodexFingerprint,
       lastUsageDetectedAt: nil
     ),
@@ -162,7 +160,7 @@ private func testApplySuccess() throws {
   let nextState = UsageRefreshController.applySuccess(
     snapshot: snapshot,
     pricingMode: .online,
-    lastUsageDetectedAtByAgent: ["Claude Code": now.addingTimeInterval(-60)],
+    lastUsageDetectedAtByAgent: [.claude: now.addingTimeInterval(-60)],
     to: state,
     now: now
   )

@@ -7,30 +7,24 @@ mkdir -p .build
 # caught by `mise run test`, not only by the release bundle build in CI.
 bash scripts/build_swift.sh
 
+mapfile -t source_files < <(
+  find Sources/AgentTally \
+    -name '*.swift' \
+    ! -path 'Sources/AgentTally/App/*' \
+    | sort
+)
+mapfile -t test_files < <(
+  find Tests \
+    -name '*.swift' \
+    ! -name 'HarnessMain.swift' \
+    | sort
+)
+
 swiftc \
   -module-name AgentTallyTestHarness \
   -o .build/agenttally-test-harness \
-  Sources/AgentTally/AgentSpending.swift \
-  Sources/AgentTally/AppState.swift \
-  Sources/AgentTally/LoginItemManager.swift \
-  Sources/AgentTally/MenuRowsBuilder.swift \
-  Sources/AgentTally/PowerSource.swift \
-  Sources/AgentTally/StatusPresenter.swift \
-  Sources/AgentTally/TimeUtils.swift \
-  Sources/AgentTally/AgentKind.swift \
-  Sources/AgentTally/UsageDataFingerprint.swift \
-  Sources/AgentTally/UsageFetcher.swift \
-  Sources/AgentTally/UsagePayloadParser.swift \
-  Sources/AgentTally/UsageRefreshController.swift \
-  Tests/TestSupport.swift \
-  Tests/StatusPresenterHarness.swift \
-  Tests/UsageRefreshControllerHarness.swift \
-  Tests/UsageFetcherHarness.swift \
-  Tests/UsageDataFingerprintHarness.swift \
-  Tests/UsagePayloadParserHarness.swift \
-  Tests/TimeUtilsHarness.swift \
-  Tests/MenuRowsHarness.swift \
-  Tests/LoginItemHarness.swift \
+  "${source_files[@]}" \
+  "${test_files[@]}" \
   Tests/HarnessMain.swift
 
 .build/agenttally-test-harness

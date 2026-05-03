@@ -7,7 +7,7 @@ struct TestHarness {
       ("StatusPresenter", testStatusPresenter),
       ("UsageRefreshController", testUsageRefreshController),
       ("UsageFetcher", testUsageFetcherTimeoutDecision),
-      ("UsageDataFingerprint", testUsageDataFingerprint),
+      ("UsageDataScanner", testUsageDataScanner),
       ("UsagePayloadParser", testUsagePayloadParser),
       ("TimeUtils", testTimeUtils),
       ("MenuRowsBuilder", testMenuRowsBuilder),

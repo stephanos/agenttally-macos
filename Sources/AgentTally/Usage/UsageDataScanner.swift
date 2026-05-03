@@ -10,16 +10,13 @@ public struct UsageDataFingerprint: Equatable, Sendable {
 }
 
 public struct AgentUsageDataScan: Sendable {
-  public let agent: AgentKind
   public let fingerprint: UsageDataFingerprint
   public let lastUsageDetectedAt: Date?
 
   public init(
-    agent: AgentKind,
     fingerprint: UsageDataFingerprint,
     lastUsageDetectedAt: Date?
   ) {
-    self.agent = agent
     self.fingerprint = fingerprint
     self.lastUsageDetectedAt = lastUsageDetectedAt
   }
@@ -32,18 +29,18 @@ public struct UsageDataScan: Sendable {
     self.agents = agents
   }
 
-  public var lastUsageDetectedAtByAgentName: [String: Date] {
-    var detectedAtByName: [String: Date] = [:]
+  public var lastUsageDetectedAtByAgent: [AgentKind: Date] {
+    var detectedAtByAgent: [AgentKind: Date] = [:]
     for (agent, scan) in agents {
       if let lastUsageDetectedAt = scan.lastUsageDetectedAt {
-        detectedAtByName[agent.displayName] = lastUsageDetectedAt
+        detectedAtByAgent[agent] = lastUsageDetectedAt
       }
     }
-    return detectedAtByName
+    return detectedAtByAgent
   }
 }
 
-enum UsageDataFingerprintBuilder {
+enum UsageDataScanner {
   private static let manifestVersion = "agenttally-usage-fingerprint-v1"
   private static let claudeProjectsDirectoryName = "projects"
   private static let codexSessionsDirectoryName = "sessions"
@@ -71,7 +68,7 @@ enum UsageDataFingerprintBuilder {
       to lines: inout [String],
       context: ScanContext
     ) -> Date? {
-      UsageDataFingerprintBuilder.appendClaudeManifest(
+      UsageDataScanner.appendClaudeManifest(
         to: &lines,
         environment: context.environment,
         homeDirectory: context.homeDirectory,
@@ -87,7 +84,7 @@ enum UsageDataFingerprintBuilder {
       to lines: inout [String],
       context: ScanContext
     ) -> Date? {
-      UsageDataFingerprintBuilder.appendCodexManifest(
+      UsageDataScanner.appendCodexManifest(
         to: &lines,
         monthStart: context.monthStart,
         environment: context.environment,
@@ -150,7 +147,6 @@ enum UsageDataFingerprintBuilder {
         value: digest.map { String(format: "%02x", $0) }.joined()
       )
       agentScans[source.agent] = AgentUsageDataScan(
-        agent: source.agent,
         fingerprint: fingerprint,
         lastUsageDetectedAt: lastUsageDetectedAt
       )

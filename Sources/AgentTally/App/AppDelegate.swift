@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     refreshTask = Task {
       do {
         let usageDataScan = await Task.detached(priority: .utility) {
-          UsageDataFingerprintBuilder.currentScan()
+          UsageDataScanner.currentScan()
         }.value
 
         let agentsToRefresh = UsageRefreshController.agentsNeedingRefresh(
@@ -118,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyRefreshSuccess(
           cachedSnapshot(),
           pricingMode: request.pricingMode,
-          lastUsageDetectedAtByAgent: usageDataScan.lastUsageDetectedAtByAgentName
+          lastUsageDetectedAtByAgent: usageDataScan.lastUsageDetectedAtByAgent
         )
       } catch {
         guard !Task.isCancelled else {
@@ -155,7 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private func applyRefreshSuccess(
     _ snapshot: UsageSnapshot,
     pricingMode: PricingRefreshMode,
-    lastUsageDetectedAtByAgent: [String: Date]
+    lastUsageDetectedAtByAgent: [AgentKind: Date]
   ) {
     state = UsageRefreshController.applySuccess(
       snapshot: snapshot,

@@ -1,6 +1,6 @@
 import Foundation
 
-func testUsageDataFingerprint() throws {
+func testUsageDataScanner() throws {
   try testClaudeFingerprintIgnoresNonUsageFiles()
   try testCodexFingerprintScopesToCurrentMonthSessions()
 }
@@ -99,7 +99,7 @@ private func testScan(
   homeDirectory: URL,
   environment: [String: String] = [:]
 ) -> UsageDataScan {
-  UsageDataFingerprintBuilder.makeScan(
+  UsageDataScanner.makeScan(
     monthStart: "20260501",
     today: "2026-05-03",
     environment: environment,

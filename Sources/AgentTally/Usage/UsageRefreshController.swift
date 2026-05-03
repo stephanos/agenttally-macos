@@ -32,7 +32,7 @@ enum UsageRefreshController {
   static func applySuccess(
     snapshot: UsageSnapshot,
     pricingMode: PricingRefreshMode,
-    lastUsageDetectedAtByAgent: [String: Date] = [:],
+    lastUsageDetectedAtByAgent: [AgentKind: Date] = [:],
     to state: AppState,
     now: Date = Date()
   ) -> AppState {
@@ -41,14 +41,15 @@ enum UsageRefreshController {
     nextState.lastRefreshAt = now
     nextState.businessDays = TimeUtils.businessDaysThisMonth(now: now)
     nextState.agentSpendings = snapshot.agents.map { raw in
-      AgentSpending(
+      let agent = AgentKind(displayName: raw.name)
+      return AgentSpending(
         name: raw.name,
         isInstalled: raw.found,
         todayCost: raw.today,
         monthCost: raw.month,
         avgPerDay: nextState.businessDays > 0 && raw.found
           ? raw.month / Double(nextState.businessDays) : 0,
-        lastUsageDetectedAt: lastUsageDetectedAtByAgent[raw.name]
+        lastUsageDetectedAt: agent.flatMap { lastUsageDetectedAtByAgent[$0] }
       )
     }
     if pricingMode == .online {
