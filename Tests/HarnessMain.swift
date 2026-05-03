@@ -11,6 +11,7 @@ struct TestHarness {
       ("UsagePayloadParser", testUsagePayloadParser),
       ("TimeUtils", testTimeUtils),
       ("MenuRowsBuilder", testMenuRowsBuilder),
+      ("DemoMode", testDemoMode),
       ("LoginItemManager", testLoginItemManager),
     ]
 

@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private var state = AppState()
   private var lastSuccessfulAgentData: [AgentKind: AgentRawData] = [:]
   private var lastUsageDataFingerprints: [AgentKind: UsageDataFingerprint] = [:]
+  private let runtimeMode = AppRuntimeMode.current()
   private let loginItemManager = LoginItemManager()
   private lazy var updaterController = SPUStandardUpdaterController(
     startingUpdater: true,
@@ -23,7 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private var softwareUpdateViewState = SoftwareUpdateViewState.idle
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    _ = updaterController
+    if runtimeMode == .live {
+      _ = updaterController
+    }
 
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     self.statusItem = statusItem
@@ -32,10 +35,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     menu.delegate = self
     statusItem.menu = menu
 
-    startAtLoginViewState = loginItemManager.configureOnLaunch()
-    rescheduleRefreshTimer()
+    if runtimeMode == .demo {
+      applyDemoState()
+      startAtLoginViewState = .make(status: .enabled)
+    } else {
+      startAtLoginViewState = loginItemManager.configureOnLaunch()
+      rescheduleRefreshTimer()
+    }
     renderTitle()
-    refreshUsage()
+    if runtimeMode == .live {
+      refreshUsage()
+    }
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -47,23 +57,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   }
 
   func menuNeedsUpdate(_ menu: NSMenu) {
+    if runtimeMode == .demo {
+      applyDemoState()
+      renderTitle()
+    }
     rebuildMenu(menu)
   }
 
   @objc
   private func refreshTimerFired() {
+    guard runtimeMode == .live else {
+      return
+    }
+
     rescheduleRefreshTimer()
     refreshUsage()
   }
 
   @objc
   private func refreshMenuItemSelected() {
+    guard runtimeMode == .live else {
+      applyDemoState()
+      renderTitle()
+      refreshMenuIfNeeded()
+      return
+    }
+
     rescheduleRefreshTimer()
     refreshUsage()
   }
 
   @objc
   private func startAtLoginMenuItemSelected(_ sender: NSMenuItem) {
+    guard runtimeMode == .live else {
+      startAtLoginViewState = .make(status: sender.state == .on ? .notRegistered : .enabled)
+      refreshMenuIfNeeded()
+      return
+    }
+
     let shouldEnable = sender.state != .on
     startAtLoginViewState = loginItemManager.setEnabled(shouldEnable)
     refreshMenuIfNeeded()
@@ -71,6 +102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
   @objc
   private func checkForUpdatesMenuItemSelected(_ sender: NSMenuItem) {
+    guard runtimeMode == .live else {
+      return
+    }
+
     updaterController.checkForUpdates(sender)
   }
 
@@ -95,6 +130,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   }
 
   private func refreshUsage() {
+    guard runtimeMode == .live else {
+      applyDemoState()
+      renderTitle()
+      refreshMenuIfNeeded()
+      return
+    }
+
     guard
       let request = UsageRefreshController.beginRefresh(
         from: state,
@@ -278,6 +320,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private func noteAvailableUpdate(version: String) {
     softwareUpdateViewState = SoftwareUpdateViewState(availableVersion: version)
     refreshMenuIfNeeded()
+  }
+
+  private func applyDemoState(now: Date = Date()) {
+    state = DemoFixtures.appState(now: now)
   }
 }
 

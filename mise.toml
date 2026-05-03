@@ -26,6 +26,11 @@ run = "bash scripts/build_app.sh debug && .build/debug/AgentTally.app/Contents/M
 depends = ["build-helper"]
 description = "Build and run debug app bundle"
 
+[tasks.demo]
+run = "bash scripts/build_app.sh debug && .build/debug/AgentTally.app/Contents/MacOS/AgentTally --demo"
+depends = ["build-helper"]
+description = "Build and run debug app bundle with canned fixture data"
+
 [tasks.run]
 run = ".build/release/AgentTally.app/Contents/MacOS/AgentTally"
 depends = ["build"]

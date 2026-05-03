@@ -51,6 +51,12 @@ For local development:
 mise run dev
 ```
 
+For screenshot/demo work with canned fixture data instead of live usage:
+
+```sh
+mise run demo
+```
+
 `mise` manages the Bun toolchain for this project and uses the system Swift toolchain. The build tasks install the local `ccusage` dependency, compile the helper, and stage both binaries into `AgentTally.app`.
 
 ## Releases
