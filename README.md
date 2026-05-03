@@ -61,6 +61,21 @@ mise run demo
 
 ## Releases
 
+To cut a new release:
+
+```sh
+mise run check
+git tag -a v0.10 -m "v0.10"
+git push origin v0.10
+```
+
+Pushing the tag runs the GitHub Actions release workflow, which builds the app,
+uploads `AgentTally.app.zip`, publishes `appcast.xml`, and makes the release
+available to Sparkle. After the workflow completes, verify the new version at:
+
+- <https://github.com/stephanos/agenttally-macos/releases>
+- <https://github.com/stephanos/agenttally-macos/releases/latest/download/appcast.xml>
+
 Release archives are signed for Sparkle updates with an EdDSA key. For local
 releases, the private key is read from the macOS Keychain. For GitHub Actions,
 set `SPARKLE_PRIVATE_ED_KEY` to the value exported by:
