@@ -33,6 +33,7 @@ enum UsageRefreshController {
     snapshot: UsageSnapshot,
     pricingMode: PricingRefreshMode,
     lastUsageDetectedAtByAgent: [AgentKind: Date] = [:],
+    lastErrorByAgent: [AgentKind: String] = [:],
     to state: AppState,
     now: Date = Date()
   ) -> AppState {
@@ -52,22 +53,25 @@ enum UsageRefreshController {
         lastUsageDetectedAt: agent.flatMap { lastUsageDetectedAtByAgent[$0] }
       )
     }
-    if pricingMode == .online {
+    if pricingMode == .online && lastErrorByAgent.isEmpty {
       nextState.lastOnlinePricingRefreshAt = now
     }
-    nextState.lastError = nil
+    nextState.lastErrorByAgent = lastErrorByAgent
     return nextState
   }
 
   static func applyFailure(
     error: Error,
+    affectedAgents: [AgentKind] = AgentKind.allCases,
     to state: AppState,
     now: Date = Date()
   ) -> AppState {
     var nextState = state
     nextState.isRefreshing = false
     nextState.lastRefreshAt = now
-    nextState.lastError = error.localizedDescription
+    for agent in affectedAgents {
+      nextState.lastErrorByAgent[agent] = error.localizedDescription
+    }
     return nextState
   }
 
@@ -95,7 +99,8 @@ enum UsageRefreshController {
     pricingMode: PricingRefreshMode,
     currentUsageDataScan: UsageDataScan,
     cachedUsageDataFingerprints: [AgentKind: UsageDataFingerprint],
-    cachedAgentData: [AgentKind: AgentRawData]
+    cachedAgentData: [AgentKind: AgentRawData],
+    lastErrorByAgent: [AgentKind: String] = [:]
   ) -> [AgentKind] {
     if pricingMode == .online {
       return AgentKind.allCases
@@ -108,6 +113,7 @@ enum UsageRefreshController {
 
       return cachedAgentData[agent] == nil
         || cachedUsageDataFingerprints[agent] != currentFingerprint
+        || lastErrorByAgent[agent] != nil
     }
   }
 }

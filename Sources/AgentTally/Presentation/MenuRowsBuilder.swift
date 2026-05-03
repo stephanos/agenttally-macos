@@ -41,11 +41,17 @@ public enum MenuRowsBuilder {
 
     if state.lastRefreshAt != nil {
       var isFirst = true
+      var renderedAgents = Set<AgentKind>()
       for spending in state.agentSpendings {
         if !isFirst { rows.append(.separator) }
         isFirst = false
 
-        if spending.isInstalled, state.lastError == nil {
+        let agent = AgentKind(displayName: spending.name)
+        if let agent {
+          renderedAgents.insert(agent)
+        }
+
+        if spending.isInstalled {
           rows.append(.section("\(spending.name) spending"))
           rows.append(
             .disabled("Today: $\(StatusPresenter.displayDollarAmount(for: spending.todayCost))"))
@@ -65,10 +71,21 @@ public enum MenuRowsBuilder {
         } else if !spending.isInstalled {
           rows.append(.disabled("\(spending.name): not installed"))
         }
+
+        if let agent, let error = state.lastErrorByAgent[agent], !error.isEmpty {
+          rows.append(.disabled("Error: \(error)"))
+        }
       }
 
-      if let lastError = state.lastError, !lastError.isEmpty {
-        rows.append(.disabled("Error: \(lastError)"))
+      for agent in AgentKind.allCases where !renderedAgents.contains(agent) {
+        guard let error = state.lastErrorByAgent[agent], !error.isEmpty else {
+          continue
+        }
+
+        if !isFirst { rows.append(.separator) }
+        isFirst = false
+        rows.append(.section("\(agent.displayName) spending"))
+        rows.append(.disabled("Error: \(error)"))
       }
     }
 

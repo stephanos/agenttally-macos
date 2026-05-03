@@ -12,6 +12,7 @@ func testUsageRefreshController() throws {
   try testBeginRefreshUsesOnlinePricingAfterRefreshWindow()
   try testAgentsNeedingRefreshDecision()
   try testApplySuccess()
+  try testApplyPartialSuccess()
   try testApplyFailure()
 }
 
@@ -138,6 +139,20 @@ private func testAgentsNeedingRefreshDecision() throws {
     ) == AgentKind.allCases,
     "online refresh should request all agents because pricing may change"
   )
+
+  try expect(
+    UsageRefreshController.agentsNeedingRefresh(
+      pricingMode: .offline,
+      currentUsageDataScan: scan,
+      cachedUsageDataFingerprints: [
+        .claude: claudeFingerprint,
+        .codex: changedCodexFingerprint,
+      ],
+      cachedAgentData: cachedAgentData,
+      lastErrorByAgent: [.claude: "helper timed out"]
+    ) == [.claude],
+    "offline refresh should retry agents with an uncleared error"
+  )
 }
 
 private func testApplySuccess() throws {
@@ -150,7 +165,7 @@ private func testApplySuccess() throws {
     businessDays: 3,
     lastRefreshAt: nil,
     lastOnlinePricingRefreshAt: nil,
-    lastError: "old error"
+    lastErrorByAgent: [.claude: "old error"]
   )
   let snapshot = UsageSnapshot(agents: [
     AgentRawData(name: "Claude Code", found: true, today: 48.35, month: 208.12),
@@ -183,7 +198,45 @@ private func testApplySuccess() throws {
     nextState.lastOnlinePricingRefreshAt == now,
     "online refresh should update last online pricing refresh time"
   )
-  try expect(nextState.lastError == nil, "successful refresh should clear the previous error")
+  try expect(
+    nextState.lastErrorByAgent.isEmpty,
+    "successful refresh should clear previous agent errors"
+  )
+}
+
+private func testApplyPartialSuccess() throws {
+  let now = Date(timeIntervalSinceReferenceDate: 4_000)
+  let previousOnlineRefreshAt = Date(timeIntervalSinceReferenceDate: 3_000)
+  let state = AppState(
+    isRefreshing: true,
+    agentSpendings: [],
+    businessDays: 3,
+    lastRefreshAt: nil,
+    lastOnlinePricingRefreshAt: previousOnlineRefreshAt,
+    lastErrorByAgent: [.codex: "old error"]
+  )
+  let snapshot = UsageSnapshot(agents: [
+    AgentRawData(name: "Claude Code", found: true, today: 48.35, month: 208.12),
+    AgentRawData(name: "Codex", found: true, today: 10, month: 40),
+  ])
+
+  let nextState = UsageRefreshController.applySuccess(
+    snapshot: snapshot,
+    pricingMode: .online,
+    lastErrorByAgent: [.codex: "helper timed out"],
+    to: state,
+    now: now
+  )
+
+  try expect(!nextState.isRefreshing, "partial refresh should clear refreshing state")
+  try expect(
+    nextState.lastErrorByAgent == [.codex: "helper timed out"],
+    "partial refresh should preserve only the failed agent error"
+  )
+  try expect(
+    nextState.lastOnlinePricingRefreshAt == previousOnlineRefreshAt,
+    "online pricing timestamp should not advance while an agent refresh is failing"
+  )
 }
 
 private func testApplyFailure() throws {
@@ -196,11 +249,12 @@ private func testApplyFailure() throws {
     businessDays: 4,
     lastRefreshAt: Date(timeIntervalSinceReferenceDate: 2_500),
     lastOnlinePricingRefreshAt: Date(timeIntervalSinceReferenceDate: 2_400),
-    lastError: nil
+    lastErrorByAgent: [:]
   )
 
   let nextState = UsageRefreshController.applyFailure(
     error: FakeRefreshError(),
+    affectedAgents: [.codex],
     to: state,
     now: now
   )
@@ -210,7 +264,10 @@ private func testApplyFailure() throws {
   try expect(!nextState.isRefreshing, "failed refresh should clear refreshing state")
   try expect(
     nextState.lastRefreshAt == now, "failed refresh should record when the failure happened")
-  try expect(nextState.lastError == "helper timed out", "failed refresh should surface the error")
+  try expect(
+    nextState.lastErrorByAgent == [.codex: "helper timed out"],
+    "failed refresh should surface the error on the affected agent"
+  )
   try expect(claude?.todayCost == 48.35, "failed refresh should preserve cached today cost")
   try expect(claude?.monthCost == 208.12, "failed refresh should preserve cached month cost")
 }

@@ -95,39 +95,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     refreshTask?.cancel()
     refreshTask = Task {
-      do {
-        let usageDataScan = await Task.detached(priority: .utility) {
-          UsageDataScanner.currentScan()
-        }.value
-
-        let agentsToRefresh = UsageRefreshController.agentsNeedingRefresh(
-          pricingMode: request.pricingMode,
-          currentUsageDataScan: usageDataScan,
-          cachedUsageDataFingerprints: lastUsageDataFingerprints,
-          cachedAgentData: lastSuccessfulAgentData
-        )
-
-        if !agentsToRefresh.isEmpty {
-          let snapshot = try await UsageFetcher.fetchUsage(
-            offline: request.pricingMode == .offline,
-            agents: agentsToRefresh
-          )
-          cache(snapshot: snapshot, usageDataScan: usageDataScan)
-        }
-
-        applyRefreshSuccess(
-          cachedSnapshot(),
-          pricingMode: request.pricingMode,
-          lastUsageDetectedAtByAgent: usageDataScan.lastUsageDetectedAtByAgent
-        )
-      } catch {
-        guard !Task.isCancelled else {
-          return
-        }
-        applyRefreshFailure(error)
+      defer {
+        refreshTask = nil
       }
 
-      refreshTask = nil
+      let usageDataScan = await Task.detached(priority: .utility) {
+        UsageDataScanner.currentScan()
+      }.value
+
+      let agentsToRefresh = UsageRefreshController.agentsNeedingRefresh(
+        pricingMode: request.pricingMode,
+        currentUsageDataScan: usageDataScan,
+        cachedUsageDataFingerprints: lastUsageDataFingerprints,
+        cachedAgentData: lastSuccessfulAgentData,
+        lastErrorByAgent: state.lastErrorByAgent
+      )
+
+      var nextErrorByAgent = state.lastErrorByAgent
+      for agent in agentsToRefresh {
+        do {
+          let snapshot = try await UsageFetcher.fetchUsage(
+            offline: request.pricingMode == .offline,
+            agents: [agent]
+          )
+          cache(snapshot: snapshot, usageDataScan: usageDataScan)
+          nextErrorByAgent.removeValue(forKey: agent)
+        } catch {
+          guard !Task.isCancelled else {
+            return
+          }
+          nextErrorByAgent[agent] = error.localizedDescription
+          NSLog(
+            "agenttally %@ refresh failed: %@",
+            agent.displayName,
+            error.localizedDescription
+          )
+        }
+      }
+
+      applyRefreshSuccess(
+        cachedSnapshot(),
+        pricingMode: request.pricingMode,
+        lastUsageDetectedAtByAgent: usageDataScan.lastUsageDetectedAtByAgent,
+        lastErrorByAgent: nextErrorByAgent
+      )
     }
   }
 
@@ -155,12 +166,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private func applyRefreshSuccess(
     _ snapshot: UsageSnapshot,
     pricingMode: PricingRefreshMode,
-    lastUsageDetectedAtByAgent: [AgentKind: Date]
+    lastUsageDetectedAtByAgent: [AgentKind: Date],
+    lastErrorByAgent: [AgentKind: String]
   ) {
     state = UsageRefreshController.applySuccess(
       snapshot: snapshot,
       pricingMode: pricingMode,
       lastUsageDetectedAtByAgent: lastUsageDetectedAtByAgent,
+      lastErrorByAgent: lastErrorByAgent,
       to: state
     )
     renderTitle()
@@ -170,9 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private func applyRefreshFailure(_ error: Error) {
     state = UsageRefreshController.applyFailure(error: error, to: state)
     renderTitle()
-    if let lastError = state.lastError, !lastError.isEmpty {
-      NSLog("agenttally refresh failed: %@", lastError)
-    }
+    NSLog("agenttally refresh failed: %@", error.localizedDescription)
     refreshMenuIfNeeded()
   }
 

@@ -15,7 +15,7 @@ func testStatusPresenter() throws {
     agentSpendings: [claudeSpending],
     businessDays: 0,
     lastRefreshAt: Date(timeIntervalSinceReferenceDate: 1_000),
-    lastError: nil
+    lastErrorByAgent: [:]
   )
 
   try expect(
@@ -31,7 +31,7 @@ func testStatusPresenter() throws {
     agentSpendings: [claudeSpending, codexSpending],
     businessDays: 0,
     lastRefreshAt: Date(timeIntervalSinceReferenceDate: 1_000),
-    lastError: nil
+    lastErrorByAgent: [:]
   )
 
   try expect(
@@ -51,7 +51,7 @@ func testStatusPresenter() throws {
     ],
     businessDays: 0,
     lastRefreshAt: Date(timeIntervalSinceReferenceDate: 1_000),
-    lastError: nil
+    lastErrorByAgent: [:]
   )
 
   try expect(
@@ -74,7 +74,7 @@ func testStatusPresenter() throws {
     agentSpendings: [claudeSpending, codexNotInstalled],
     businessDays: 0,
     lastRefreshAt: Date(timeIntervalSinceReferenceDate: 1_000),
-    lastError: nil
+    lastErrorByAgent: [:]
   )
 
   try expect(
@@ -90,7 +90,7 @@ func testStatusPresenter() throws {
     agentSpendings: [claudeSpending],
     businessDays: 0,
     lastRefreshAt: Date(timeIntervalSinceReferenceDate: 1_000),
-    lastError: nil
+    lastErrorByAgent: [:]
   )
 
   try expect(
@@ -106,7 +106,7 @@ func testStatusPresenter() throws {
     agentSpendings: [fractionalSpending],
     businessDays: 0,
     lastRefreshAt: Date(timeIntervalSinceReferenceDate: 1_000),
-    lastError: nil
+    lastErrorByAgent: [:]
   )
   try expect(
     StatusPresenter.title(
@@ -121,10 +121,28 @@ func testStatusPresenter() throws {
     agentSpendings: [claudeSpending, codexSpending],
     businessDays: 0,
     lastRefreshAt: Date(timeIntervalSinceReferenceDate: 1_000),
-    lastError: "boom"
+    lastErrorByAgent: [.codex: "boom"]
   )
 
-  try expect(StatusPresenter.title(for: errorState) == "ERR CC", "error state should win")
+  try expect(
+    StatusPresenter.title(for: errorState, now: Date(timeIntervalSinceReferenceDate: 1_100))
+      == "$49 CC $12 CX",
+    "agent errors should not hide available cached title data"
+  )
+  let noDataErrorState = AppState(
+    isRefreshing: false,
+    agentSpendings: [],
+    businessDays: 0,
+    lastRefreshAt: Date(timeIntervalSinceReferenceDate: 1_000),
+    lastErrorByAgent: [.codex: "boom"]
+  )
+  try expect(
+    StatusPresenter.title(
+      for: noDataErrorState,
+      now: Date(timeIntervalSinceReferenceDate: 1_100)
+    ) == "ERR CX",
+    "agent errors without cached data should name the affected agent"
+  )
   try expect(
     StatusPresenter.shouldShowWarningSymbol(for: errorState),
     "error state should show a warning symbol"

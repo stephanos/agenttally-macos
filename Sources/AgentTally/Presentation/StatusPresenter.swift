@@ -13,14 +13,10 @@ public enum StatusPresenter {
   }
 
   public static func shouldShowWarningSymbol(for state: AppState) -> Bool {
-    state.lastError != nil
+    !state.lastErrorByAgent.isEmpty
   }
 
   public static func title(for state: AppState, now: Date = Date()) -> String {
-    if shouldShowWarningSymbol(for: state) {
-      return "ERR \(placeholderAgent.abbreviation)"
-    }
-
     if shouldShowLoadingTitle(lastRefreshAt: state.lastRefreshAt, now: now) {
       return loadingTitle(for: state)
     }
@@ -34,7 +30,22 @@ public enum StatusPresenter {
       }
     }
 
+    if !state.lastErrorByAgent.isEmpty {
+      return errorTitle(for: state)
+    }
+
     return loadingTitle(for: state)
+  }
+
+  private static func errorTitle(for state: AppState) -> String {
+    let abbreviations = AgentKind.allCases
+      .filter { state.lastErrorByAgent[$0] != nil }
+      .map(\.abbreviation)
+    guard !abbreviations.isEmpty else {
+      return "ERR \(placeholderAgent.abbreviation)"
+    }
+
+    return "ERR \(abbreviations.joined(separator: " "))"
   }
 
   private static func loadingTitle(for state: AppState) -> String {

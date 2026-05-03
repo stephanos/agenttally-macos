@@ -11,7 +11,7 @@ public struct AppState {
   public var businessDays = 0
   public var lastRefreshAt: Date?
   public var lastOnlinePricingRefreshAt: Date?
-  public var lastError: String?
+  public var lastErrorByAgent: [AgentKind: String] = [:]
 
   public init(
     isRefreshing: Bool = false,
@@ -19,13 +19,13 @@ public struct AppState {
     businessDays: Int = 0,
     lastRefreshAt: Date? = nil,
     lastOnlinePricingRefreshAt: Date? = nil,
-    lastError: String? = nil
+    lastErrorByAgent: [AgentKind: String] = [:]
   ) {
     self.isRefreshing = isRefreshing
     self.agentSpendings = agentSpendings
     self.businessDays = businessDays
     self.lastRefreshAt = lastRefreshAt
     self.lastOnlinePricingRefreshAt = lastOnlinePricingRefreshAt
-    self.lastError = lastError
+    self.lastErrorByAgent = lastErrorByAgent
   }
 }

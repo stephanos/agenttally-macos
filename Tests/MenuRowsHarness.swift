@@ -27,7 +27,7 @@ func testMenuRowsBuilder() throws {
       agentSpendings: [claudeSpending, codexSpending],
       businessDays: 4,
       lastRefreshAt: Date(timeIntervalSinceReferenceDate: 1_000),
-      lastError: nil
+      lastErrorByAgent: [:]
     ),
     startAtLogin: .make(status: .enabled),
     appVersion: "0.1",
@@ -130,7 +130,7 @@ func testMenuRowsBuilder() throws {
       agentSpendings: [claudeSpending, codexSpending],
       businessDays: 4,
       lastRefreshAt: Date(timeIntervalSinceReferenceDate: 1_000),
-      lastError: nil
+      lastErrorByAgent: [:]
     ),
     startAtLogin: .make(status: .enabled)
   )
@@ -145,17 +145,40 @@ func testMenuRowsBuilder() throws {
       agentSpendings: [claudeSpending, codexSpending],
       businessDays: 4,
       lastRefreshAt: Date(timeIntervalSinceReferenceDate: 1_000),
-      lastError: "helper timed out"
+      lastErrorByAgent: [.codex: "helper timed out"]
     ),
     startAtLogin: .make(status: .enabled)
   )
   try expect(
     errorRows.contains(.disabled("Error: helper timed out")),
-    "refresh failures should surface the localized error message in the menu"
+    "refresh failures should surface the affected agent error in the menu"
   )
   try expect(
-    !errorRows.contains(.disabled("Today: $49")),
-    "error state should hide stale summary rows"
+    errorRows.contains(.disabled("Today: $49")),
+    "one agent error should not hide another agent's cached summary rows"
+  )
+  try expect(
+    errorRows.contains(.disabled("Today: $10")),
+    "an errored agent should still show cached summary rows when available"
+  )
+
+  let firstRefreshErrorRows = MenuRowsBuilder.rows(
+    for: AppState(
+      isRefreshing: false,
+      agentSpendings: [],
+      businessDays: 0,
+      lastRefreshAt: Date(timeIntervalSinceReferenceDate: 1_000),
+      lastErrorByAgent: [.codex: "helper timed out"]
+    ),
+    startAtLogin: .make(status: .enabled)
+  )
+  try expect(
+    firstRefreshErrorRows.contains(.section("Codex spending")),
+    "first-refresh agent errors should create a section for the affected agent"
+  )
+  try expect(
+    firstRefreshErrorRows.contains(.disabled("Error: helper timed out")),
+    "first-refresh agent errors should still be visible without cached spending"
   )
 
   // No agent data yet (before first refresh)
