@@ -68,11 +68,11 @@ public enum MenuRowsBuilder {
           .disabled("Today: $\(StatusPresenter.displayDollarAmount(for: spending.todayCost))"))
         rows.append(
           .disabled(
-            "Month: $\(StatusPresenter.displayDollarAmount(for: spending.monthCost)) (\(state.businessDays) biz days)"
+            "Month: $\(StatusPresenter.displayDollarAmount(for: spending.monthCost)) (\(businessDaysLabel(state.businessDays)))"
           )
         )
         rows.append(
-          .disabled("Avg/Day: $\(StatusPresenter.displayDollarAmount(for: spending.avgPerDay))")
+          .disabled("Avg/Biz Day: $\(StatusPresenter.displayDollarAmount(for: spending.avgPerDay))")
         )
         rows.append(
           .disabled(
@@ -160,5 +160,9 @@ public enum MenuRowsBuilder {
     }
 
     return "AgentTally v\(appVersion)"
+  }
+
+  private static func businessDaysLabel(_ count: Int) -> String {
+    count == 1 ? "1 business day" : "\(count) business days"
   }
 }
