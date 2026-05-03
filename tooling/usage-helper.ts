@@ -1,9 +1,20 @@
 import { loadDailyUsageData } from "ccusage/data-loader";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "fs";
 import os from "os";
 import path from "path";
 
-type AgentEntry = { name: string; found: boolean; today: number; month: number };
+type AgentEntry = {
+  name: string;
+  found: boolean;
+  today: number;
+  month: number;
+};
 type UsagePayload = { agents: AgentEntry[] };
 
 function formatLocalDay(date: Date): string {
@@ -17,7 +28,10 @@ function formatLocalDay(date: Date): string {
 
 // ─── Claude Code ────────────────────────────────────────────────────────────
 
-async function loadClaudeData(since: string, offline: boolean): Promise<AgentEntry> {
+async function loadClaudeData(
+  since: string,
+  offline: boolean,
+): Promise<AgentEntry> {
   const dailyData = await loadDailyUsageData({ since, offline });
   const today = formatLocalDay(new Date());
 
@@ -42,14 +56,24 @@ const CODEX_MODEL_ALIASES: Record<string, string> = {
   "gpt-5.3-codex": "gpt-5.2-codex",
 };
 
-const CODEX_PROVIDER_PREFIXES = ["openai/", "azure/openai/", "azure/", "openrouter/openai/"];
+const CODEX_PROVIDER_PREFIXES = [
+  "openai/",
+  "azure/openai/",
+  "azure/",
+  "openrouter/openai/",
+];
 
 // ─── Pricing cache ───────────────────────────────────────────────────────────
 
 const LITELLM_URL =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const PRICING_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const PRICING_CACHE_PATH = path.join(os.homedir(), ".cache", "agenttally", "codex-pricing.json");
+const PRICING_CACHE_PATH = path.join(
+  os.homedir(),
+  ".cache",
+  "agenttally",
+  "codex-pricing.json",
+);
 
 type PricingCache = {
   fetchedAt: number;
@@ -59,20 +83,30 @@ type PricingCache = {
 function parseLiteLLMEntry(data: unknown): ModelPricing | null {
   if (typeof data !== "object" || data == null) return null;
   const d = data as Record<string, unknown>;
-  const input = typeof d.input_cost_per_token === "number" ? d.input_cost_per_token : null;
-  const output = typeof d.output_cost_per_token === "number" ? d.output_cost_per_token : null;
+  const input =
+    typeof d.input_cost_per_token === "number" ? d.input_cost_per_token : null;
+  const output =
+    typeof d.output_cost_per_token === "number"
+      ? d.output_cost_per_token
+      : null;
   if (input == null || output == null) return null;
   return {
     input_cost_per_token: input,
     output_cost_per_token: output,
     cache_read_input_token_cost:
-      typeof d.cache_read_input_token_cost === "number" ? d.cache_read_input_token_cost : undefined,
+      typeof d.cache_read_input_token_cost === "number"
+        ? d.cache_read_input_token_cost
+        : undefined,
   };
 }
 
-async function loadCodexPricing(offline: boolean): Promise<Record<string, ModelPricing>> {
+async function loadCodexPricing(
+  offline: boolean,
+): Promise<Record<string, ModelPricing>> {
   try {
-    const cached = JSON.parse(readFileSync(PRICING_CACHE_PATH, "utf8")) as PricingCache;
+    const cached = JSON.parse(
+      readFileSync(PRICING_CACHE_PATH, "utf8"),
+    ) as PricingCache;
     if (Date.now() - cached.fetchedAt < PRICING_CACHE_TTL_MS) {
       return cached.pricing;
     }
@@ -80,10 +114,14 @@ async function loadCodexPricing(offline: boolean): Promise<Record<string, ModelP
     // cache miss or corrupt
   }
 
-  if (offline) throw new Error("Codex pricing unavailable: cache stale and in offline mode");
+  if (offline)
+    throw new Error(
+      "Codex pricing unavailable: cache stale and in offline mode",
+    );
 
   const response = await fetch(LITELLM_URL);
-  if (!response.ok) throw new Error(`Failed to fetch Codex pricing: HTTP ${response.status}`);
+  if (!response.ok)
+    throw new Error(`Failed to fetch Codex pricing: HTTP ${response.status}`);
   const raw = (await response.json()) as Record<string, unknown>;
 
   const pricing: Record<string, ModelPricing> = {};
@@ -93,18 +131,22 @@ async function loadCodexPricing(offline: boolean): Promise<Record<string, ModelP
   }
 
   mkdirSync(path.dirname(PRICING_CACHE_PATH), { recursive: true });
-  writeFileSync(PRICING_CACHE_PATH, JSON.stringify({ fetchedAt: Date.now(), pricing }));
+  writeFileSync(
+    PRICING_CACHE_PATH,
+    JSON.stringify({ fetchedAt: Date.now(), pricing }),
+  );
   return pricing;
 }
 
 function lookupCodexPricing(
   modelName: string,
-  pricing: Record<string, ModelPricing>
+  pricing: Record<string, ModelPricing>,
 ): ModelPricing | null {
   // Build candidates: bare name + all provider-prefixed variants
   const candidates = [modelName];
   for (const prefix of CODEX_PROVIDER_PREFIXES) {
-    if (modelName.startsWith(prefix)) candidates.push(modelName.slice(prefix.length));
+    if (modelName.startsWith(prefix))
+      candidates.push(modelName.slice(prefix.length));
     else candidates.push(`${prefix}${modelName}`);
   }
 
@@ -118,7 +160,8 @@ function lookupCodexPricing(
   // Fuzzy fallback: substring match
   const lower = modelName.toLowerCase();
   for (const [key, val] of Object.entries(pricing)) {
-    if (key.toLowerCase().includes(lower) || lower.includes(key.toLowerCase())) return val;
+    if (key.toLowerCase().includes(lower) || lower.includes(key.toLowerCase()))
+      return val;
   }
 
   return null;
@@ -133,7 +176,8 @@ type TokenUsage = {
 function calcCost(usage: TokenUsage, pricing: ModelPricing): number {
   const cachedInput = Math.min(usage.cached_input_tokens, usage.input_tokens);
   const nonCachedInput = usage.input_tokens - cachedInput;
-  const cacheRate = pricing.cache_read_input_token_cost ?? pricing.input_cost_per_token;
+  const cacheRate =
+    pricing.cache_read_input_token_cost ?? pricing.input_cost_per_token;
   return (
     nonCachedInput * pricing.input_cost_per_token +
     cachedInput * cacheRate +
@@ -141,11 +185,17 @@ function calcCost(usage: TokenUsage, pricing: ModelPricing): number {
   );
 }
 
-function subtractTokenUsage(total: TokenUsage, prev: TokenUsage | null): TokenUsage {
+function subtractTokenUsage(
+  total: TokenUsage,
+  prev: TokenUsage | null,
+): TokenUsage {
   if (!prev) return total;
   return {
     input_tokens: Math.max(0, total.input_tokens - prev.input_tokens),
-    cached_input_tokens: Math.max(0, total.cached_input_tokens - prev.cached_input_tokens),
+    cached_input_tokens: Math.max(
+      0,
+      total.cached_input_tokens - prev.cached_input_tokens,
+    ),
     output_tokens: Math.max(0, total.output_tokens - prev.output_tokens),
   };
 }
@@ -153,7 +203,7 @@ function subtractTokenUsage(total: TokenUsage, prev: TokenUsage | null): TokenUs
 function parseCodexSession(
   filePath: string,
   pricing: Record<string, ModelPricing>,
-  costsByDate: Map<string, number>
+  costsByDate: Map<string, number>,
 ) {
   let content: string;
   try {
@@ -184,9 +234,13 @@ function parseCodexSession(
 
     if (entry.type !== "event_msg") continue;
     const payload = entry.payload as Record<string, unknown> | null;
-    if ((payload as Record<string, unknown> | null)?.type !== "token_count") continue;
+    if ((payload as Record<string, unknown> | null)?.type !== "token_count")
+      continue;
 
-    const info = (payload as Record<string, unknown>).info as Record<string, unknown> | null;
+    const info = (payload as Record<string, unknown>).info as Record<
+      string,
+      unknown
+    > | null;
     const lastUsage = info?.last_token_usage as TokenUsage | null;
     const totalUsage = info?.total_token_usage as TokenUsage | null;
 
@@ -199,7 +253,9 @@ function parseCodexSession(
     if (totalUsage?.input_tokens != null) prevTotals = totalUsage;
     if (!delta) continue;
 
-    const modelPricing = currentModel ? lookupCodexPricing(currentModel, pricing) : null;
+    const modelPricing = currentModel
+      ? lookupCodexPricing(currentModel, pricing)
+      : null;
     if (!modelPricing) continue;
 
     const cost = calcCost(delta, modelPricing);
@@ -210,8 +266,12 @@ function parseCodexSession(
   }
 }
 
-async function loadCodexData(since: string, offline: boolean): Promise<AgentEntry> {
-  const codexHome = process.env["CODEX_HOME"] ?? path.join(os.homedir(), ".codex");
+async function loadCodexData(
+  since: string,
+  offline: boolean,
+): Promise<AgentEntry> {
+  const codexHome =
+    process.env["CODEX_HOME"] ?? path.join(os.homedir(), ".codex");
   const sessionsDir = path.join(codexHome, "sessions");
   if (!existsSync(sessionsDir)) {
     return { name: "Codex", found: false, today: 0, month: 0 };
@@ -250,7 +310,10 @@ async function loadCodexData(since: string, offline: boolean): Promise<AgentEntr
 const AGENT_LOADERS = {
   claude: loadClaudeData,
   codex: loadCodexData,
-} as const satisfies Record<string, (since: string, offline: boolean) => Promise<AgentEntry>>;
+} as const satisfies Record<
+  string,
+  (since: string, offline: boolean) => Promise<AgentEntry>
+>;
 
 type AgentID = keyof typeof AGENT_LOADERS;
 
@@ -287,7 +350,9 @@ function parseRequestedAgents(args: string[]): AgentID[] {
     }
   }
 
-  return requested.size > 0 ? ALL_AGENTS.filter((agent) => requested.has(agent)) : ALL_AGENTS;
+  return requested.size > 0
+    ? ALL_AGENTS.filter((agent) => requested.has(agent))
+    : ALL_AGENTS;
 }
 
 async function main() {
@@ -299,7 +364,7 @@ async function main() {
   const requestedAgents = parseRequestedAgents(process.argv.slice(3));
 
   const agents = await Promise.all(
-    requestedAgents.map((agent) => AGENT_LOADERS[agent](since, offline))
+    requestedAgents.map((agent) => AGENT_LOADERS[agent](since, offline)),
   );
 
   const payload: UsagePayload = {

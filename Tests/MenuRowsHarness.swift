@@ -18,7 +18,8 @@ func testMenuRowsBuilder() throws {
     avgPerDay: 10.0,
     lastUsageDetectedAt: now.addingTimeInterval(-15)
   )
-  let codexNotInstalled = AgentSpending(name: "Codex", isInstalled: false, todayCost: 0, monthCost: 0, avgPerDay: 0)
+  let codexNotInstalled = AgentSpending(
+    name: "Codex", isInstalled: false, todayCost: 0, monthCost: 0, avgPerDay: 0)
 
   let rows = MenuRowsBuilder.rows(
     for: AppState(
@@ -39,7 +40,8 @@ func testMenuRowsBuilder() throws {
   )
   let headerIndex = rows.firstIndex(of: .disabled("AgentTally v0.1"))!
   if case .disabled(let label) = rows[headerIndex + 1] {
-    try expect(label.hasPrefix("Last refreshed:"), "last updated should appear directly below the header")
+    try expect(
+      label.hasPrefix("Last refreshed:"), "last updated should appear directly below the header")
   } else {
     throw TestFailure(description: "row after header should be 'Last refreshed:' disabled item")
   }

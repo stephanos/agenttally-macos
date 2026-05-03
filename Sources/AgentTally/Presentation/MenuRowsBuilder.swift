@@ -47,7 +47,8 @@ public enum MenuRowsBuilder {
 
         if spending.isInstalled, state.lastError == nil {
           rows.append(.section("\(spending.name) spending"))
-          rows.append(.disabled("Today: $\(StatusPresenter.displayDollarAmount(for: spending.todayCost))"))
+          rows.append(
+            .disabled("Today: $\(StatusPresenter.displayDollarAmount(for: spending.todayCost))"))
           rows.append(
             .disabled(
               "Month: $\(StatusPresenter.displayDollarAmount(for: spending.monthCost)) (\(state.businessDays) biz days)"

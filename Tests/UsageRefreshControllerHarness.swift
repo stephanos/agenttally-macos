@@ -188,7 +188,8 @@ private func testApplySuccess() throws {
 
 private func testApplyFailure() throws {
   let now = Date(timeIntervalSinceReferenceDate: 3_000)
-  let spending = AgentSpending(name: "Claude Code", isInstalled: true, todayCost: 48.35, monthCost: 208.12, avgPerDay: 52.03)
+  let spending = AgentSpending(
+    name: "Claude Code", isInstalled: true, todayCost: 48.35, monthCost: 208.12, avgPerDay: 52.03)
   let state = AppState(
     isRefreshing: true,
     agentSpendings: [spending],

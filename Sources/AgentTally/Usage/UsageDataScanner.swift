@@ -226,7 +226,8 @@ enum UsageDataScanner {
 
     let candidateDirectories: [URL]
     if !envPaths.isEmpty {
-      candidateDirectories = envPaths
+      candidateDirectories =
+        envPaths
         .split(separator: ",")
         .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }
@@ -245,7 +246,8 @@ enum UsageDataScanner {
     for directory in candidateDirectories {
       let normalizedDirectory = directory.standardizedFileURL
       let normalizedPath = normalizedDirectory.path
-      let projectsDirectory = normalizedDirectory
+      let projectsDirectory =
+        normalizedDirectory
         .appendingPathComponent(claudeProjectsDirectoryName)
         .standardizedFileURL
 

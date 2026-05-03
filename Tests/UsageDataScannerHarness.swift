@@ -10,12 +10,14 @@ private func testClaudeFingerprintIgnoresNonUsageFiles() throws {
   let homeDirectory = try makeTemporaryDirectory()
   defer { try? fileManager.removeItem(at: homeDirectory) }
 
-  let usageFile = homeDirectory
+  let usageFile =
+    homeDirectory
     .appendingPathComponent(".claude")
     .appendingPathComponent("projects")
     .appendingPathComponent("sample-project")
     .appendingPathComponent("session.jsonl")
-  let settingsFile = homeDirectory
+  let settingsFile =
+    homeDirectory
     .appendingPathComponent(".claude")
     .appendingPathComponent("settings.json")
 
@@ -53,13 +55,15 @@ private func testCodexFingerprintScopesToCurrentMonthSessions() throws {
   defer { try? fileManager.removeItem(at: homeDirectory) }
 
   let codexHome = homeDirectory.appendingPathComponent("codex-home")
-  let previousMonthFile = codexHome
+  let previousMonthFile =
+    codexHome
     .appendingPathComponent("sessions")
     .appendingPathComponent("2026")
     .appendingPathComponent("04")
     .appendingPathComponent("30")
     .appendingPathComponent("old.jsonl")
-  let currentMonthFile = codexHome
+  let currentMonthFile =
+    codexHome
     .appendingPathComponent("sessions")
     .appendingPathComponent("2026")
     .appendingPathComponent("05")

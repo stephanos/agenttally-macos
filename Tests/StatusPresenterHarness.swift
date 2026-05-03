@@ -1,10 +1,14 @@
 import Foundation
 
 func testStatusPresenter() throws {
-  let claudeSpending = AgentSpending(name: "Claude Code", isInstalled: true, todayCost: 48.35, monthCost: 0, avgPerDay: 0)
-  let codexSpending = AgentSpending(name: "Codex", isInstalled: true, todayCost: 12.0, monthCost: 0, avgPerDay: 0)
-  let codexNotInstalled = AgentSpending(name: "Codex", isInstalled: false, todayCost: 0, monthCost: 0, avgPerDay: 0)
-  let fractionalSpending = AgentSpending(name: "Claude Code", isInstalled: true, todayCost: 0.01, monthCost: 0, avgPerDay: 0)
+  let claudeSpending = AgentSpending(
+    name: "Claude Code", isInstalled: true, todayCost: 48.35, monthCost: 0, avgPerDay: 0)
+  let codexSpending = AgentSpending(
+    name: "Codex", isInstalled: true, todayCost: 12.0, monthCost: 0, avgPerDay: 0)
+  let codexNotInstalled = AgentSpending(
+    name: "Codex", isInstalled: false, todayCost: 0, monthCost: 0, avgPerDay: 0)
+  let fractionalSpending = AgentSpending(
+    name: "Claude Code", isInstalled: true, todayCost: 0.01, monthCost: 0, avgPerDay: 0)
 
   let freshState = AppState(
     isRefreshing: true,
@@ -41,7 +45,8 @@ func testStatusPresenter() throws {
   let codexOnlyState = AppState(
     isRefreshing: false,
     agentSpendings: [
-      AgentSpending(name: "Claude Code", isInstalled: false, todayCost: 0, monthCost: 0, avgPerDay: 0),
+      AgentSpending(
+        name: "Claude Code", isInstalled: false, todayCost: 0, monthCost: 0, avgPerDay: 0),
       codexSpending,
     ],
     businessDays: 0,
