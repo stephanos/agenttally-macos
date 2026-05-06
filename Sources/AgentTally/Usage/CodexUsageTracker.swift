@@ -131,10 +131,11 @@ enum CodexUsageTracker {
   }
 
   private static func codexSessionsDirectory(context: UsageTrackingContext) -> URL {
-    if let codexHome = context.environment["CODEX_HOME"], !codexHome.isEmpty {
-      return URL(fileURLWithPath: codexHome).appendingPathComponent("sessions")
-    }
-    return context.homeDirectory.appendingPathComponent(".codex").appendingPathComponent("sessions")
+    CodexPathResolver.resolveCodexHome(
+      from: context.environment,
+      homeDirectory: context.homeDirectory
+    )
+    .appendingPathComponent("sessions")
   }
 
   private static func currentMonthSessionFiles(root: URL, sinceDate: String) -> [URL] {

@@ -3,6 +3,7 @@ import Foundation
 func testUsageDataScanner() throws {
   try testClaudeFingerprintIgnoresNonUsageFiles()
   try testCodexFingerprintScopesToCurrentMonthSessions()
+  try testUsageDataScannerTreatsEmptyCodexHomeLikeDefault()
 }
 
 private func testClaudeFingerprintIgnoresNonUsageFiles() throws {
@@ -109,5 +110,37 @@ private func testScan(
     environment: environment,
     homeDirectory: homeDirectory,
     timeZone: TimeZone(secondsFromGMT: 0)!
+  )
+}
+
+private func testUsageDataScannerTreatsEmptyCodexHomeLikeDefault() throws {
+  let fileManager = FileManager.default
+  let homeDirectory = try makeTemporaryDirectory()
+  defer { try? fileManager.removeItem(at: homeDirectory) }
+
+  // Create the default Codex location (~/.codex/sessions)
+  let defaultCodexHome = homeDirectory.appendingPathComponent(".codex")
+  let defaultSessionsDir = defaultCodexHome.appendingPathComponent("sessions")
+  try FileManager.default.createDirectory(at: defaultSessionsDir, withIntermediateDirectories: true)
+
+  // Write a Codex session
+  let sessionFile =
+    defaultSessionsDir
+    .appendingPathComponent("2026")
+    .appendingPathComponent("05")
+    .appendingPathComponent("03")
+    .appendingPathComponent("session.jsonl")
+
+  try writeTestFile(sessionFile, contents: "test\n", modifiedAt: 1_000)
+
+  // Scan with empty CODEX_HOME (should still find the default location)
+  let scan = testScan(
+    homeDirectory: homeDirectory,
+    environment: ["CODEX_HOME": ""]  // Empty string
+  )
+
+  try expect(
+    scan.agents[.codex]?.lastUsageDetectedAt != nil,
+    "scanner with empty CODEX_HOME should read from ~/.codex (the default location)"
   )
 }

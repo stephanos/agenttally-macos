@@ -5,6 +5,7 @@ func testCodexUsageTracker() throws {
   try testCodexTrackerParsesFractionalSecondTimestamps()
   try testCodexTrackerReconstructsTotalsWhenLastUsageIsMissing()
   try testCodexTrackerMatchesAliasedModelPricing()
+  try testCodexTrackerTreatsEmptyCodexHomeLikeDefault()
 }
 
 private let codexTrackerNow = Calendar.current.date(
@@ -169,4 +170,48 @@ private func testCodexTrackerMatchesAliasedModelPricing() throws {
   )
 
   try expect(raw.today > 0, "provider-prefixed alias should resolve to bundled pricing")
+}
+
+private func testCodexTrackerTreatsEmptyCodexHomeLikeDefault() throws {
+  let homeDirectory = try makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: homeDirectory) }
+
+  // Create a Codex session directory at ~/.codex/sessions (the default location)
+  let codexHome = homeDirectory.appendingPathComponent(".codex")
+  let sessionsDir = codexHome.appendingPathComponent("sessions")
+  try FileManager.default.createDirectory(at: sessionsDir, withIntermediateDirectories: true)
+
+  // Write a test session file
+  let sessionFile =
+    sessionsDir
+    .appendingPathComponent("2026")
+    .appendingPathComponent("05")
+    .appendingPathComponent("04")
+    .appendingPathComponent("session.jsonl")
+
+  try writeTestFile(
+    sessionFile,
+    contents: [
+      #"{"timestamp":"2026-05-04T08:00:00Z","type":"turn_context","payload":{"model":"gpt-5"}}"#,
+      #"{"timestamp":"2026-05-04T08:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":50,"cached_input_tokens":0,"output_tokens":10}}}}"#,
+    ].joined(separator: "\n"),
+    modifiedAt: 1_000
+  )
+
+  // Test with empty CODEX_HOME (should use default ~/.codex)
+  let raw = CodexUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: UsageTrackingContext(
+      environment: ["CODEX_HOME": ""],  // Empty string
+      homeDirectory: homeDirectory,
+      now: codexTrackerNow,
+      pricingDataLoader: { _ in Data() }
+    )
+  )
+
+  try expect(
+    raw.found && raw.today > 0,
+    "tracker with empty CODEX_HOME should read from ~/.codex (the default location)"
+  )
 }

@@ -269,11 +269,10 @@ enum UsageDataScanner {
     environment: [String: String],
     homeDirectory: URL
   ) -> URL {
-    if let override = environment["CODEX_HOME"] {
-      return URL(fileURLWithPath: override.isEmpty ? "." : override).standardizedFileURL
-    }
-
-    return homeDirectory.appendingPathComponent(".codex").standardizedFileURL
+    CodexPathResolver.resolveCodexHome(
+      from: environment,
+      homeDirectory: homeDirectory
+    )
   }
 
   private static func appendJSONLFileMetadata(
