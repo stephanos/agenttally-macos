@@ -51,12 +51,6 @@ For local development:
 mise run dev
 ```
 
-For screenshot/demo work with canned fixture data instead of live usage:
-
-```sh
-mise run demo
-```
-
 `mise` manages the Bun toolchain for formatting tasks and uses the system Swift toolchain. The app tracks Claude Code and Codex usage natively in Swift and refreshes cached pricing dynamically at runtime.
 
 ## Releases

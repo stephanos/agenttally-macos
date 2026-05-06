@@ -16,7 +16,6 @@ struct TestHarness {
       ("UsageDataScanner", testUsageDataScanner),
       ("TimeUtils", testTimeUtils),
       ("MenuRowsBuilder", testMenuRowsBuilder),
-      ("DemoMode", testDemoMode),
       ("MenuRenderer", testMenuRenderer),
       ("LoginItemManager", testLoginItemManager),
       ("RefreshIntervalPreference", testRefreshIntervalPreference),
