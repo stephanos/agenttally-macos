@@ -39,11 +39,11 @@ private func testDemoFixtures() throws {
     now: now
   )
   try expect(
-    rows.contains(.disabled("Month: $167 (12 business days)")),
-    "demo rows should show the fixture business day count"
+    rows.contains(.disabled("Month: $167")),
+    "demo rows should show the fixture month cost without business-day text"
   )
   try expect(
-    rows.contains(.disabled("Avg/Biz Day: $14")),
-    "demo rows should calculate average from month cost and business days"
+    !rows.contains(.disabled("Avg/Biz Day: $14")),
+    "demo rows should not show a business-day average"
   )
 }
