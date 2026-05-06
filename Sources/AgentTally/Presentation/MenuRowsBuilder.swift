@@ -70,12 +70,7 @@ public enum MenuRowsBuilder {
         rows.append(
           .disabled("Today: $\(StatusPresenter.displayDollarAmount(for: spending.todayCost))"))
         rows.append(
-          .disabled(
-            "Month: $\(StatusPresenter.displayDollarAmount(for: spending.monthCost)) (\(businessDaysLabel(state.businessDays)))"
-          )
-        )
-        rows.append(
-          .disabled("Avg/Biz Day: $\(StatusPresenter.displayDollarAmount(for: spending.avgPerDay))")
+          .disabled("Month: $\(StatusPresenter.displayDollarAmount(for: spending.monthCost))")
         )
         rows.append(
           .disabled(
@@ -176,9 +171,6 @@ public enum MenuRowsBuilder {
     return "AgentTally v\(appVersion)"
   }
 
-  private static func businessDaysLabel(_ count: Int) -> String {
-    count == 1 ? "1 business day" : "\(count) business days"
-  }
 
   private static func refreshIntervalRows(selected: RefreshIntervalOption) -> [MenuRow] {
     RefreshIntervalOption.allCases.map { option in

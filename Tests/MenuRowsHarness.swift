@@ -95,12 +95,12 @@ func testMenuRowsBuilder() throws {
     "menu should place the spending source label directly above the spending rows"
   )
   try expect(
-    rows.contains(.disabled("Month: $209 (4 business days)")),
-    "month cost should round up to the next display dollar and label business days"
+    rows.contains(.disabled("Month: $209")),
+    "month cost should round up to the next display dollar without business-day text"
   )
   try expect(
-    rows.contains(.disabled("Avg/Biz Day: $53")),
-    "average cost should clarify it is per business day"
+    !rows.contains(.disabled("Avg/Biz Day: $53")),
+    "menu should not render a business-day average row"
   )
   try expect(
     rows.contains(.disabled("Last usage: 40s ago")),
@@ -119,8 +119,8 @@ func testMenuRowsBuilder() throws {
     "Codex today cost should be shown"
   )
   try expect(
-    rows.contains(.disabled("Month: $40 (4 business days)")),
-    "Codex month cost should be shown"
+    rows.contains(.disabled("Month: $40")),
+    "Codex month cost should be shown without business-day text"
   )
   try expect(
     rows.contains(.disabled("Last usage: 15s ago")),
