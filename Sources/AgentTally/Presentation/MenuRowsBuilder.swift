@@ -171,7 +171,6 @@ public enum MenuRowsBuilder {
     return "AgentTally v\(appVersion)"
   }
 
-
   private static func refreshIntervalRows(selected: RefreshIntervalOption) -> [MenuRow] {
     RefreshIntervalOption.allCases.map { option in
       .action(
