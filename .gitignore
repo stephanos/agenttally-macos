@@ -8,3 +8,4 @@ DerivedData/
 .swiftpm/
 .netrc
 sparkle_private_key
+test_output.txt
