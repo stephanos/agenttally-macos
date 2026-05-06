@@ -30,6 +30,7 @@ func testMenuRowsBuilder() throws {
       lastErrorByAgent: [:]
     ),
     startAtLogin: .make(status: .enabled),
+    refreshInterval: .oneMinute,
     appVersion: "0.1",
     now: now
   )
@@ -72,10 +73,6 @@ func testMenuRowsBuilder() throws {
     rows[lastRefreshedIndex + 1]
       == .action(title: "Refresh", kind: .refresh, keyEquivalent: "", state: .off),
     "refresh action should appear below the last refreshed row"
-  )
-  try expect(
-    rows[lastRefreshedIndex + 2] == .separator,
-    "refresh rows should be separated from app controls"
   )
   try expect(
     rows[headerIndex + 1]
@@ -148,6 +145,39 @@ func testMenuRowsBuilder() throws {
     "Codex not installed should not show spending section"
   )
 
+  let submenuCases = rows.filter {
+    if case .submenu = $0 { return true }
+    return false
+  }
+  try expect(submenuCases.count == 1, "menu should render a single refresh rate submenu row")
+  guard case .submenu(let title, let submenuRows) = rows[lastRefreshedIndex + 2] else {
+    throw TestFailure(description: "refresh section should include a refresh rate submenu")
+  }
+
+  try expect(
+    title == "Refresh rate: 1 min",
+    "refresh interval parent row should include the selected interval"
+  )
+
+  try expect(
+    submenuRows == [
+      .action(title: "1 min", kind: .refreshInterval(.oneMinute), keyEquivalent: "", state: .on),
+      .action(title: "2 min", kind: .refreshInterval(.twoMinutes), keyEquivalent: "", state: .off),
+      .action(title: "5 min", kind: .refreshInterval(.fiveMinutes), keyEquivalent: "", state: .off),
+      .action(title: "10 min", kind: .refreshInterval(.tenMinutes), keyEquivalent: "", state: .off),
+    ],
+    "refresh rate submenu should contain all interval actions in order"
+  )
+  let flatRefreshIntervalRows = rows.filter {
+    if case .action(_, let kind, _, _) = $0, case .refreshInterval = kind {
+      return true
+    }
+    return false
+  }
+  try expect(
+    flatRefreshIntervalRows.isEmpty,
+    "refresh interval actions should only appear inside the refresh rate submenu"
+  )
   try expect(
     rows.contains(
       .action(

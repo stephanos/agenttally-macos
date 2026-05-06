@@ -4,7 +4,7 @@
 
 `AgentTally` is a standalone macOS menu bar app for tracking AI agent spending.
 
-The app shows Claude Code and Codex spend for today and the current month, and refreshes every 60s.
+The app shows Claude Code and Codex spend for today and the current month, and lets you choose a 1 min, 2 min, 5 min, or 10 min refresh interval directly from the menu bar.
 
 <p align="center">
   <img src="docs/menu-bar.png" alt="AgentTally menu bar screenshot">

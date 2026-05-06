@@ -44,7 +44,16 @@ enum MenuRenderer {
         keyEquivalent: keyEquivalent
       )
       item.target = target
+      item.representedObject = kind
       item.state = nsControlState(for: state)
+      return item
+    case .submenu(let title, let rows):
+      let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+      let submenu = NSMenu(title: title)
+      for row in rows {
+        submenu.addItem(makeMenuItem(for: row, target: target, selectorProvider: selectorProvider))
+      }
+      item.submenu = submenu
       return item
     }
   }

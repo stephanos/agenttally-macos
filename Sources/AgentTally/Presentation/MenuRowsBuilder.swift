@@ -9,6 +9,7 @@ public enum MenuCheckState: Equatable {
 public enum MenuActionKind: Equatable {
   case startAtLogin
   case refresh
+  case refreshInterval(RefreshIntervalOption)
   case checkForUpdates
   case quit
 }
@@ -18,6 +19,7 @@ public enum MenuRow: Equatable {
   case section(String)
   case separator
   case action(title: String, kind: MenuActionKind, keyEquivalent: String, state: MenuCheckState)
+  indirect case submenu(title: String, rows: [MenuRow])
 }
 
 public enum MenuRowsBuilder {
@@ -25,6 +27,7 @@ public enum MenuRowsBuilder {
     for state: AppState,
     startAtLogin: StartAtLoginViewState,
     softwareUpdate: SoftwareUpdateViewState = .idle,
+    refreshInterval: RefreshIntervalOption = .defaultValue,
     appVersion: String? = nil,
     now: Date = Date()
   ) -> [MenuRow] {
@@ -32,7 +35,7 @@ public enum MenuRowsBuilder {
     if !rows.isEmpty {
       rows.append(.separator)
     }
-    rows.append(contentsOf: refreshRows(for: state, now: now))
+    rows.append(contentsOf: refreshRows(for: state, selected: refreshInterval, now: now))
     rows.append(.separator)
     rows.append(
       contentsOf: appRows(
@@ -138,7 +141,11 @@ public enum MenuRowsBuilder {
     return rows
   }
 
-  private static func refreshRows(for state: AppState, now: Date) -> [MenuRow] {
+  private static func refreshRows(
+    for state: AppState,
+    selected: RefreshIntervalOption,
+    now: Date
+  ) -> [MenuRow] {
     var rows: [MenuRow] = [
       .disabled("Last refreshed: \(StatusPresenter.lastRefreshedLabel(for: state, now: now))")
     ]
@@ -148,6 +155,13 @@ public enum MenuRowsBuilder {
     } else {
       rows.append(.action(title: "Refresh", kind: .refresh, keyEquivalent: "", state: .off))
     }
+
+    rows.append(
+      .submenu(
+        title: "Refresh rate: \(selected.menuTitle)",
+        rows: refreshIntervalRows(selected: selected)
+      )
+    )
 
     return rows
   }
@@ -164,5 +178,16 @@ public enum MenuRowsBuilder {
 
   private static func businessDaysLabel(_ count: Int) -> String {
     count == 1 ? "1 business day" : "\(count) business days"
+  }
+
+  private static func refreshIntervalRows(selected: RefreshIntervalOption) -> [MenuRow] {
+    RefreshIntervalOption.allCases.map { option in
+      .action(
+        title: option.menuTitle,
+        kind: .refreshInterval(option),
+        keyEquivalent: "",
+        state: option == selected ? .on : .off
+      )
+    }
   }
 }

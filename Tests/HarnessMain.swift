@@ -2,6 +2,7 @@ import Foundation
 
 @main
 struct TestHarness {
+  @MainActor
   static func main() throws {
     let tests: [(String, () throws -> Void)] = [
       ("StatusPresenter", testStatusPresenter),
@@ -15,7 +16,9 @@ struct TestHarness {
       ("TimeUtils", testTimeUtils),
       ("MenuRowsBuilder", testMenuRowsBuilder),
       ("DemoMode", testDemoMode),
+      ("MenuRenderer", testMenuRenderer),
       ("LoginItemManager", testLoginItemManager),
+      ("RefreshIntervalPreference", testRefreshIntervalPreference),
     ]
 
     var failures: [String] = []

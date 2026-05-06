@@ -1,6 +1,7 @@
 .DS_Store
 /.build
 /Packages
+.worktrees/
 /node_modules
 xcuserdata/
 DerivedData/

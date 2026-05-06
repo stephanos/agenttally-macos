@@ -4,9 +4,6 @@ import Sparkle
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-  private let pluggedInRefreshInterval: TimeInterval = 60
-  private let batteryRefreshInterval: TimeInterval = 120
-
   private var statusItem: NSStatusItem?
   private var timer: Timer?
   private var refreshTask: Task<Void, Never>?
@@ -15,11 +12,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private var lastUsageDataFingerprints: [AgentKind: UsageDataFingerprint] = [:]
   private let runtimeMode = AppRuntimeMode.current()
   private let loginItemManager = LoginItemManager()
+  private let refreshIntervalPreference = RefreshIntervalPreference()
   private lazy var updaterController = SPUStandardUpdaterController(
     startingUpdater: true,
     updaterDelegate: self,
     userDriverDelegate: self
   )
+  private var refreshInterval = RefreshIntervalOption.defaultValue
   private var startAtLoginViewState = StartAtLoginViewState.make(status: .notRegistered)
   private var softwareUpdateViewState = SoftwareUpdateViewState.idle
 
@@ -35,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     menu.delegate = self
     statusItem.menu = menu
 
+    refreshInterval = refreshIntervalPreference.selectedInterval()
     if runtimeMode == .demo {
       applyDemoState()
       startAtLoginViewState = .make(status: .enabled)
@@ -87,6 +87,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   }
 
   @objc
+  private func refreshIntervalMenuItemSelected(_ sender: NSMenuItem) {
+    guard case .refreshInterval(let option) = sender.representedObject as? MenuActionKind else {
+      return
+    }
+
+    refreshInterval = option
+    refreshIntervalPreference.setSelectedInterval(option)
+    rescheduleRefreshTimer()
+    refreshMenuIfNeeded()
+  }
+
+  @objc
   private func startAtLoginMenuItemSelected(_ sender: NSMenuItem) {
     guard runtimeMode == .live else {
       startAtLoginViewState = .make(status: sender.state == .on ? .notRegistered : .enabled)
@@ -125,7 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   }
 
   private func currentRefreshInterval() -> TimeInterval {
-    PowerSource.isOnBatteryPower() ? batteryRefreshInterval : pluggedInRefreshInterval
+    refreshInterval.duration
   }
 
   private func refreshUsage() {
@@ -282,6 +294,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       for: state,
       startAtLogin: startAtLoginViewState,
       softwareUpdate: softwareUpdateViewState,
+      refreshInterval: refreshInterval,
       appVersion: appVersion()
     )
     MenuRenderer.render(menu: menu, rows: rows, target: self, selectorProvider: selector)
@@ -309,6 +322,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       return #selector(startAtLoginMenuItemSelected(_:))
     case .refresh:
       return #selector(refreshMenuItemSelected)
+    case .refreshInterval:
+      return #selector(refreshIntervalMenuItemSelected(_:))
     case .checkForUpdates:
       return #selector(checkForUpdatesMenuItemSelected(_:))
     case .quit:
