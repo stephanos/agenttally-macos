@@ -12,6 +12,10 @@ public enum RefreshIntervalOption: Int, CaseIterable, Equatable, Sendable {
     TimeInterval(rawValue)
   }
 
+  public var timerTolerance: TimeInterval {
+    duration * 0.1
+  }
+
   public var menuTitle: String {
     switch self {
     case .oneMinute:

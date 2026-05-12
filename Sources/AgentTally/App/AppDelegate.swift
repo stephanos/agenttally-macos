@@ -93,13 +93,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
   private func rescheduleRefreshTimer() {
     timer?.invalidate()
-    timer = Timer.scheduledTimer(
+    let timer = Timer.scheduledTimer(
       timeInterval: currentRefreshInterval(),
       target: self,
       selector: #selector(refreshTimerFired),
       userInfo: nil,
       repeats: false
     )
+    timer.tolerance = refreshInterval.timerTolerance
+    self.timer = timer
   }
 
   private func currentRefreshInterval() -> TimeInterval {
