@@ -130,25 +130,20 @@ enum CodexUsageTracker {
     fractionalTimestampFormatter: ISO8601DateFormatter,
     plainTimestampFormatter: ISO8601DateFormatter
   ) -> [String: Double] {
-    guard let content = try? String(contentsOf: sessionFile, encoding: .utf8) else {
-      return [:]
-    }
-
     var costsByDate: [String: Double] = [:]
     var currentModel: String?
     var previousTotals: TokenUsage?
 
-    for rawLine in content.split(whereSeparator: \.isNewline) {
-      let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+    JSONLLineReader.readLines(from: sessionFile) { line in
       guard !line.isEmpty,
         let entry = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
       else {
-        continue
+        return
       }
 
       if entry["type"] as? String == "turn_context" {
         currentModel = (entry["payload"] as? [String: Any])?["model"] as? String
-        continue
+        return
       }
 
       guard entry["type"] as? String == "event_msg",
@@ -168,7 +163,7 @@ enum CodexUsageTracker {
           aliases: aliases
         )
       else {
-        continue
+        return
       }
 
       let info = payload["info"] as? [String: Any] ?? [:]
@@ -186,7 +181,7 @@ enum CodexUsageTracker {
       }
 
       guard let delta else {
-        continue
+        return
       }
 
       let cost = UsagePricing.calculateCodexCost(

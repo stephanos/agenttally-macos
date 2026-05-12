@@ -143,17 +143,8 @@ enum ClaudeUsageTracker {
     fractionalTimestampFormatter: ISO8601DateFormatter,
     plainTimestampFormatter: ISO8601DateFormatter
   ) -> [ClaudeUsageRecord] {
-    guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
-      return []
-    }
-
     var records: [ClaudeUsageRecord] = []
-    for rawLine in content.split(whereSeparator: \.isNewline) {
-      let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !line.isEmpty else {
-        continue
-      }
-
+    JSONLLineReader.readLines(from: fileURL) { line in
       guard let entry = try? decoder.decode(Entry.self, from: Data(line.utf8)),
         let timestamp = entry.timestamp,
         let usage = entry.message?.usage,
@@ -163,7 +154,7 @@ enum ClaudeUsageTracker {
           plainFormatter: plainTimestampFormatter
         )
       else {
-        continue
+        return
       }
 
       let sessionId =
@@ -205,6 +196,7 @@ enum ClaudeUsageTracker {
         )
       )
     }
+
     return records
   }
 

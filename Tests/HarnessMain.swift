@@ -14,6 +14,7 @@ struct TestHarness {
       ("UsageRefreshController", testUsageRefreshController),
       ("UsageFetcher", testUsageFetcher),
       ("UsageDataScanner", testUsageDataScanner),
+      ("JSONLLineReader", testJSONLLineReader),
       ("TimeUtils", testTimeUtils),
       ("MenuRowsBuilder", testMenuRowsBuilder),
       ("MenuRenderer", testMenuRenderer),
