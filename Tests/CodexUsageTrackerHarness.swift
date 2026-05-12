@@ -6,6 +6,7 @@ func testCodexUsageTracker() throws {
   try testCodexTrackerReconstructsTotalsWhenLastUsageIsMissing()
   try testCodexTrackerMatchesAliasedModelPricing()
   try testCodexTrackerTreatsEmptyCodexHomeLikeDefault()
+  try testCodexTrackerReusesUnchangedCachedFileSummary()
 }
 
 private let codexTrackerNow = Calendar.current.date(
@@ -214,4 +215,71 @@ private func testCodexTrackerTreatsEmptyCodexHomeLikeDefault() throws {
     raw.found && raw.today > 0,
     "tracker with empty CODEX_HOME should read from ~/.codex (the default location)"
   )
+}
+
+private func testCodexTrackerReusesUnchangedCachedFileSummary() throws {
+  let homeDirectory = try makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: homeDirectory) }
+
+  let sessionFile =
+    homeDirectory
+    .appendingPathComponent(".codex")
+    .appendingPathComponent("sessions")
+    .appendingPathComponent("2026")
+    .appendingPathComponent("05")
+    .appendingPathComponent("04")
+    .appendingPathComponent("session.jsonl")
+
+  let validContents = [
+    #"{"timestamp":"2026-05-04T08:00:00Z","type":"turn_context","payload":{"model":"gpt-5"}}"#,
+    #"{"timestamp":"2026-05-04T08:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":250,"output_tokens":100}}}}"#,
+  ].joined(separator: "\n")
+  try writeTestFile(sessionFile, contents: validContents, modifiedAt: 5_000)
+
+  let context = UsageTrackingContext(
+    environment: [:],
+    homeDirectory: homeDirectory,
+    now: codexTrackerNow,
+    pricingDataLoader: { _ in Data() }
+  )
+  let first = CodexUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: context,
+    cache: CodexUsageFileSummaryCache()
+  )
+
+  try expect(first.rawData.today > 0, "first parse should read the valid Codex file")
+
+  try writeTestFile(
+    sessionFile,
+    contents: sameByteCountInvalidJSON(as: validContents),
+    modifiedAt: 5_000
+  )
+  let unchanged = CodexUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: context,
+    cache: first.cache
+  )
+
+  try expectNear(
+    unchanged.rawData.today,
+    first.rawData.today,
+    "unchanged file identity should reuse the cached Codex summary"
+  )
+
+  try writeTestFile(
+    sessionFile,
+    contents: sameByteCountInvalidJSON(as: validContents),
+    modifiedAt: 5_001
+  )
+  let changed = CodexUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: context,
+    cache: unchanged.cache
+  )
+
+  try expectNear(changed.rawData.today, 0, "changed file identity should reparse the Codex file")
 }

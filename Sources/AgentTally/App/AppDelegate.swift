@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private var state = AppState()
   private var lastSuccessfulAgentData: [AgentKind: AgentRawData] = [:]
   private var lastUsageDataFingerprints: [AgentKind: UsageDataFingerprint] = [:]
+  private var usageFileSummaryCache = UsageFileSummaryCache()
   private let loginItemManager = LoginItemManager()
   private let refreshIntervalPreference = RefreshIntervalPreference()
   private let refreshGenerationGate = RefreshGenerationGate()
@@ -143,15 +144,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       )
 
       var nextErrorByAgent = self.state.lastErrorByAgent
+      var nextUsageFileSummaryCache = self.usageFileSummaryCache
       for agent in agentsToRefresh {
         do {
           let isOffline = request.pricingMode == .offline
-          let snapshot = try await Task.detached(priority: .utility) {
+          let cache = nextUsageFileSummaryCache
+          let result = try await Task.detached(priority: .utility) {
             try await UsageFetcher.fetchUsage(
               offline: isOffline,
-              agents: [agent]
+              agents: [agent],
+              context: .live,
+              cache: cache
             )
           }.value
+          let snapshot = result.snapshot
+          nextUsageFileSummaryCache = result.cache
 
           // Check generation after each fetch
           guard self.refreshGenerationGate.isCurrent(generation) else {
@@ -159,6 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
           }
 
           self.cache(snapshot: snapshot, usageDataScan: usageDataScan)
+          self.usageFileSummaryCache = nextUsageFileSummaryCache
           nextErrorByAgent.removeValue(forKey: agent)
         } catch {
           guard !Task.isCancelled else {

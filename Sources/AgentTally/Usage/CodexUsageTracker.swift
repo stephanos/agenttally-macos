@@ -47,9 +47,23 @@ enum CodexUsageTracker {
     pricing: [String: ModelPricing],
     context: UsageTrackingContext
   ) -> AgentRawData {
+    let cache = CodexUsageFileSummaryCache()
+    let result = load(since: since, pricing: pricing, context: context, cache: cache)
+    return result.rawData
+  }
+
+  static func load(
+    since: String,
+    pricing: [String: ModelPricing],
+    context: UsageTrackingContext,
+    cache: CodexUsageFileSummaryCache
+  ) -> (rawData: AgentRawData, cache: CodexUsageFileSummaryCache) {
     let sessionsDirectory = codexSessionsDirectory(context: context)
     guard FileManager.default.fileExists(atPath: sessionsDirectory.path) else {
-      return AgentRawData(name: "Codex", found: false, today: 0, month: 0)
+      return (
+        AgentRawData(name: "Codex", found: false, today: 0, month: 0),
+        CodexUsageFileSummaryCache()
+      )
     }
 
     let localDayFormatter = makeLocalDayFormatter()
@@ -57,84 +71,135 @@ enum CodexUsageTracker {
     let plainTimestampFormatter = makePlainTimestampFormatter()
     let today = formatLocalDay(context.now, formatter: localDayFormatter)
     let sinceDate = isoDateString(fromCompactDate: since)
+    let pricingFingerprint = UsagePricingFingerprint.make(for: pricing)
     var costsByDate: [String: Double] = [:]
+    var nextCache = cache
+    var activeCacheKeys = Set<String>()
 
     for sessionFile in currentMonthSessionFiles(root: sessionsDirectory, sinceDate: sinceDate) {
-      guard let content = try? String(contentsOf: sessionFile, encoding: .utf8) else {
+      let cacheKey = UsageFileCacheKey.path(for: sessionFile)
+      guard
+        let identity = UsageFileCacheKey.identity(
+          for: sessionFile,
+          pricingFingerprint: pricingFingerprint
+        )
+      else {
         continue
       }
+      activeCacheKeys.insert(cacheKey)
 
-      var currentModel: String?
-      var previousTotals: TokenUsage?
-
-      for rawLine in content.split(whereSeparator: \.isNewline) {
-        let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !line.isEmpty,
-          let entry = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
-        else {
-          continue
-        }
-
-        if entry["type"] as? String == "turn_context" {
-          currentModel = (entry["payload"] as? [String: Any])?["model"] as? String
-          continue
-        }
-
-        guard entry["type"] as? String == "event_msg",
-          let payload = entry["payload"] as? [String: Any],
-          payload["type"] as? String == "token_count",
-          let timestamp = entry["timestamp"] as? String,
-          let timestampDate = parseTimestamp(
-            timestamp,
-            fractionalFormatter: fractionalTimestampFormatter,
-            plainFormatter: plainTimestampFormatter
-          ),
-          let modelName = currentModel,
-          let modelPricing = UsagePricing.lookupPricing(
-            modelName: modelName,
-            pricing: pricing,
-            providerPrefixes: providerPrefixes,
-            aliases: aliases
-          )
-        else {
-          continue
-        }
-
-        let info = payload["info"] as? [String: Any] ?? [:]
-        let lastUsage = TokenUsage(dictionary: info["last_token_usage"] as? [String: Any])
-        let totalUsage = TokenUsage(dictionary: info["total_token_usage"] as? [String: Any])
-
-        let delta: TokenUsage?
-        if let lastUsage {
-          delta = lastUsage
-        } else if let totalUsage {
-          delta = previousTotals.map { totalUsage.subtracting($0) } ?? totalUsage
-          previousTotals = totalUsage
-        } else {
-          delta = nil
-        }
-
-        guard let delta else {
-          continue
-        }
-
-        let cost = UsagePricing.calculateCodexCost(
-          inputTokens: delta.inputTokens,
-          cachedInputTokens: delta.cachedInputTokens,
-          outputTokens: delta.outputTokens,
-          pricing: modelPricing
+      let fileCostsByDate: [String: Double]
+      if let cached = nextCache.files[cacheKey], cached.identity == identity {
+        fileCostsByDate = cached.costsByDate
+      } else {
+        fileCostsByDate = parseCostsByDate(
+          from: sessionFile,
+          pricing: pricing,
+          localDayFormatter: localDayFormatter,
+          fractionalTimestampFormatter: fractionalTimestampFormatter,
+          plainTimestampFormatter: plainTimestampFormatter
         )
-        let day = formatLocalDay(timestampDate, formatter: localDayFormatter)
+        nextCache.files[cacheKey] = CodexUsageFileSummary(
+          identity: identity,
+          costsByDate: fileCostsByDate
+        )
+      }
+
+      for (day, cost) in fileCostsByDate {
         costsByDate[day, default: 0] += cost
       }
     }
 
-    return AgentRawData(
-      name: "Codex",
-      found: true,
-      today: costsByDate[today] ?? 0,
-      month: costsByDate.values.reduce(0, +)
+    nextCache.files = nextCache.files.filter { activeCacheKeys.contains($0.key) }
+
+    return (
+      AgentRawData(
+        name: "Codex",
+        found: true,
+        today: costsByDate[today] ?? 0,
+        month: costsByDate.values.reduce(0, +)
+      ),
+      nextCache
     )
+  }
+
+  private static func parseCostsByDate(
+    from sessionFile: URL,
+    pricing: [String: ModelPricing],
+    localDayFormatter: DateFormatter,
+    fractionalTimestampFormatter: ISO8601DateFormatter,
+    plainTimestampFormatter: ISO8601DateFormatter
+  ) -> [String: Double] {
+    guard let content = try? String(contentsOf: sessionFile, encoding: .utf8) else {
+      return [:]
+    }
+
+    var costsByDate: [String: Double] = [:]
+    var currentModel: String?
+    var previousTotals: TokenUsage?
+
+    for rawLine in content.split(whereSeparator: \.isNewline) {
+      let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !line.isEmpty,
+        let entry = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
+      else {
+        continue
+      }
+
+      if entry["type"] as? String == "turn_context" {
+        currentModel = (entry["payload"] as? [String: Any])?["model"] as? String
+        continue
+      }
+
+      guard entry["type"] as? String == "event_msg",
+        let payload = entry["payload"] as? [String: Any],
+        payload["type"] as? String == "token_count",
+        let timestamp = entry["timestamp"] as? String,
+        let timestampDate = parseTimestamp(
+          timestamp,
+          fractionalFormatter: fractionalTimestampFormatter,
+          plainFormatter: plainTimestampFormatter
+        ),
+        let modelName = currentModel,
+        let modelPricing = UsagePricing.lookupPricing(
+          modelName: modelName,
+          pricing: pricing,
+          providerPrefixes: providerPrefixes,
+          aliases: aliases
+        )
+      else {
+        continue
+      }
+
+      let info = payload["info"] as? [String: Any] ?? [:]
+      let lastUsage = TokenUsage(dictionary: info["last_token_usage"] as? [String: Any])
+      let totalUsage = TokenUsage(dictionary: info["total_token_usage"] as? [String: Any])
+
+      let delta: TokenUsage?
+      if let lastUsage {
+        delta = lastUsage
+      } else if let totalUsage {
+        delta = previousTotals.map { totalUsage.subtracting($0) } ?? totalUsage
+        previousTotals = totalUsage
+      } else {
+        delta = nil
+      }
+
+      guard let delta else {
+        continue
+      }
+
+      let cost = UsagePricing.calculateCodexCost(
+        inputTokens: delta.inputTokens,
+        cachedInputTokens: delta.cachedInputTokens,
+        outputTokens: delta.outputTokens,
+        pricing: modelPricing
+      )
+      let day = formatLocalDay(timestampDate, formatter: localDayFormatter)
+      costsByDate[day, default: 0] += cost
+    }
+
+    return costsByDate
   }
 
   private static func codexSessionsDirectory(context: UsageTrackingContext) -> URL {

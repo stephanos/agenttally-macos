@@ -42,9 +42,23 @@ enum ClaudeUsageTracker {
     pricing: [String: ModelPricing],
     context: UsageTrackingContext
   ) -> AgentRawData {
+    let cache = ClaudeUsageFileSummaryCache()
+    let result = load(since: since, pricing: pricing, context: context, cache: cache)
+    return result.rawData
+  }
+
+  static func load(
+    since: String,
+    pricing: [String: ModelPricing],
+    context: UsageTrackingContext,
+    cache: ClaudeUsageFileSummaryCache
+  ) -> (rawData: AgentRawData, cache: ClaudeUsageFileSummaryCache) {
     let projectsDirectories = claudeProjectsDirectories(context: context)
     guard !projectsDirectories.isEmpty else {
-      return AgentRawData(name: "Claude Code", found: false, today: 0, month: 0)
+      return (
+        AgentRawData(name: "Claude Code", found: false, today: 0, month: 0),
+        ClaudeUsageFileSummaryCache()
+      )
     }
 
     let sinceDate = isoDateString(fromCompactDate: since)
@@ -53,9 +67,12 @@ enum ClaudeUsageTracker {
     let plainTimestampFormatter = makePlainTimestampFormatter()
     let decoder = JSONDecoder()
     let today = formatLocalDay(context.now, formatter: localDayFormatter)
+    let pricingFingerprint = UsagePricingFingerprint.make(for: pricing)
     var todayCost = 0.0
     var monthCost = 0.0
     var seenKeys = Set<String>()
+    var nextCache = cache
+    var activeCacheKeys = Set<String>()
 
     for projectsDirectory in projectsDirectories {
       for fileURL in walkJSONLFiles(under: projectsDirectory) {
@@ -64,77 +81,131 @@ enum ClaudeUsageTracker {
             separator: "/"
           ).first.map(String.init) ?? "unknown"
 
-        guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
+        let cacheKey = UsageFileCacheKey.path(for: fileURL)
+        guard
+          let identity = UsageFileCacheKey.identity(
+            for: fileURL,
+            pricingFingerprint: pricingFingerprint
+          )
+        else {
           continue
         }
+        activeCacheKeys.insert(cacheKey)
 
-        for rawLine in content.split(whereSeparator: \.isNewline) {
-          let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-          guard !line.isEmpty else {
-            continue
-          }
+        let records: [ClaudeUsageRecord]
+        if let cached = nextCache.files[cacheKey], cached.identity == identity {
+          records = cached.records
+        } else {
+          records = parseRecords(
+            from: fileURL,
+            projectName: projectName,
+            pricing: pricing,
+            decoder: decoder,
+            localDayFormatter: localDayFormatter,
+            fractionalTimestampFormatter: fractionalTimestampFormatter,
+            plainTimestampFormatter: plainTimestampFormatter
+          )
+          nextCache.files[cacheKey] = ClaudeUsageFileSummary(
+            identity: identity,
+            records: records
+          )
+        }
 
-          guard let entry = try? decoder.decode(Entry.self, from: Data(line.utf8)),
-            let timestamp = entry.timestamp,
-            let usage = entry.message?.usage,
-            let timestampDate = parseTimestamp(
-              timestamp,
-              fractionalFormatter: fractionalTimestampFormatter,
-              plainFormatter: plainTimestampFormatter
-            )
+        for record in records {
+          guard record.localDate >= sinceDate,
+            seenKeys.insert(record.dedupeKey).inserted
           else {
             continue
           }
 
-          let localDate = formatLocalDay(timestampDate, formatter: localDayFormatter)
-          guard localDate >= sinceDate else {
-            continue
-          }
-
-          let sessionId =
-            entry.sessionId ?? "\(projectName):\(fileURL.deletingPathExtension().lastPathComponent)"
-          let dedupeKey =
-            entry.requestId
-            ?? entry.message?.id
-            ?? "\(fileURL.path)|\(timestamp)|\(sessionId)|\(entry.message?.model ?? "<unknown>")|\(usage.inputTokens ?? 0)|\(usage.outputTokens ?? 0)|\(usage.cacheCreationInputTokens ?? 0)|\(usage.cacheReadInputTokens ?? 0)"
-
-          guard seenKeys.insert(dedupeKey).inserted else {
-            continue
-          }
-
-          let calculatedCost =
-            entry.message?.model.flatMap {
-              UsagePricing.lookupPricing(
-                modelName: $0,
-                pricing: pricing,
-                providerPrefixes: providerPrefixes
-              )
-            }.map {
-              UsagePricing.calculateClaudeCost(
-                inputTokens: usage.inputTokens ?? 0,
-                outputTokens: usage.outputTokens ?? 0,
-                cacheCreationInputTokens: usage.cacheCreationInputTokens ?? 0,
-                cacheReadInputTokens: usage.cacheReadInputTokens ?? 0,
-                pricing: $0
-              )
-            } ?? 0
-
-          let effectiveCost =
-            if let explicitCost = entry.costUSD, explicitCost.isFinite {
-              explicitCost
-            } else {
-              calculatedCost
-            }
-
-          monthCost += effectiveCost
-          if localDate == today {
-            todayCost += effectiveCost
+          monthCost += record.cost
+          if record.localDate == today {
+            todayCost += record.cost
           }
         }
       }
     }
 
-    return AgentRawData(name: "Claude Code", found: true, today: todayCost, month: monthCost)
+    nextCache.files = nextCache.files.filter { activeCacheKeys.contains($0.key) }
+
+    return (
+      AgentRawData(name: "Claude Code", found: true, today: todayCost, month: monthCost),
+      nextCache
+    )
+  }
+
+  private static func parseRecords(
+    from fileURL: URL,
+    projectName: String,
+    pricing: [String: ModelPricing],
+    decoder: JSONDecoder,
+    localDayFormatter: DateFormatter,
+    fractionalTimestampFormatter: ISO8601DateFormatter,
+    plainTimestampFormatter: ISO8601DateFormatter
+  ) -> [ClaudeUsageRecord] {
+    guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
+      return []
+    }
+
+    var records: [ClaudeUsageRecord] = []
+    for rawLine in content.split(whereSeparator: \.isNewline) {
+      let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !line.isEmpty else {
+        continue
+      }
+
+      guard let entry = try? decoder.decode(Entry.self, from: Data(line.utf8)),
+        let timestamp = entry.timestamp,
+        let usage = entry.message?.usage,
+        let timestampDate = parseTimestamp(
+          timestamp,
+          fractionalFormatter: fractionalTimestampFormatter,
+          plainFormatter: plainTimestampFormatter
+        )
+      else {
+        continue
+      }
+
+      let sessionId =
+        entry.sessionId ?? "\(projectName):\(fileURL.deletingPathExtension().lastPathComponent)"
+      let dedupeKey =
+        entry.requestId
+        ?? entry.message?.id
+        ?? "\(fileURL.path)|\(timestamp)|\(sessionId)|\(entry.message?.model ?? "<unknown>")|\(usage.inputTokens ?? 0)|\(usage.outputTokens ?? 0)|\(usage.cacheCreationInputTokens ?? 0)|\(usage.cacheReadInputTokens ?? 0)"
+
+      let calculatedCost =
+        entry.message?.model.flatMap {
+          UsagePricing.lookupPricing(
+            modelName: $0,
+            pricing: pricing,
+            providerPrefixes: providerPrefixes
+          )
+        }.map {
+          UsagePricing.calculateClaudeCost(
+            inputTokens: usage.inputTokens ?? 0,
+            outputTokens: usage.outputTokens ?? 0,
+            cacheCreationInputTokens: usage.cacheCreationInputTokens ?? 0,
+            cacheReadInputTokens: usage.cacheReadInputTokens ?? 0,
+            pricing: $0
+          )
+        } ?? 0
+
+      let effectiveCost =
+        if let explicitCost = entry.costUSD, explicitCost.isFinite {
+          explicitCost
+        } else {
+          calculatedCost
+        }
+
+      records.append(
+        ClaudeUsageRecord(
+          dedupeKey: dedupeKey,
+          localDate: formatLocalDay(timestampDate, formatter: localDayFormatter),
+          cost: effectiveCost
+        )
+      )
+    }
+    return records
   }
 
   private static func claudeProjectsDirectories(context: UsageTrackingContext) -> [URL] {

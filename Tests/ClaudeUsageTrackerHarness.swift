@@ -5,6 +5,7 @@ func testClaudeUsageTracker() throws {
   try testClaudeTrackerDeduplicatesDuplicateMessages()
   try testClaudeTrackerSkipsMalformedLines()
   try testClaudeTrackerParsesFractionalSecondTimestamps()
+  try testClaudeTrackerReusesUnchangedCachedFileSummary()
 }
 
 private let claudeTrackerNow = Calendar.current.date(
@@ -155,4 +156,67 @@ private func testClaudeTrackerParsesFractionalSecondTimestamps() throws {
   )
 
   try expect(raw.today > 0, "should parse both requests with fractional-second timestamps")
+}
+
+private func testClaudeTrackerReusesUnchangedCachedFileSummary() throws {
+  let homeDirectory = try makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: homeDirectory) }
+
+  let usageFile =
+    homeDirectory
+    .appendingPathComponent(".claude")
+    .appendingPathComponent("projects")
+    .appendingPathComponent("demo")
+    .appendingPathComponent("usage.jsonl")
+
+  let validContents =
+    #"{"sessionId":"session-1","timestamp":"2026-05-04T08:00:00Z","costUSD":1.25,"message":{"id":"m1","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1000,"output_tokens":500}}}"#
+  try writeTestFile(usageFile, contents: validContents, modifiedAt: 5_000)
+
+  let context = UsageTrackingContext(
+    environment: [:],
+    homeDirectory: homeDirectory,
+    now: claudeTrackerNow,
+    pricingDataLoader: { _ in Data() }
+  )
+  let first = ClaudeUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: context,
+    cache: ClaudeUsageFileSummaryCache()
+  )
+
+  try expectNear(first.rawData.today, 1.25, "first parse should read the valid file")
+
+  try writeTestFile(
+    usageFile,
+    contents: sameByteCountInvalidJSON(as: validContents),
+    modifiedAt: 5_000
+  )
+  let unchanged = ClaudeUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: context,
+    cache: first.cache
+  )
+
+  try expectNear(
+    unchanged.rawData.today,
+    1.25,
+    "unchanged file identity should reuse the cached Claude summary"
+  )
+
+  try writeTestFile(
+    usageFile,
+    contents: sameByteCountInvalidJSON(as: validContents),
+    modifiedAt: 5_001
+  )
+  let changed = ClaudeUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: context,
+    cache: unchanged.cache
+  )
+
+  try expectNear(changed.rawData.today, 0, "changed file identity should reparse the file")
 }

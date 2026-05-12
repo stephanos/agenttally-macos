@@ -39,11 +39,27 @@ enum UsageFetcher {
     agents: [AgentKind],
     context: UsageTrackingContext
   ) async throws -> UsageSnapshot {
+    let result = try await fetchUsage(
+      offline: offline,
+      agents: agents,
+      context: context,
+      cache: UsageFileSummaryCache()
+    )
+    return result.snapshot
+  }
+
+  static func fetchUsage(
+    offline: Bool,
+    agents: [AgentKind],
+    context: UsageTrackingContext,
+    cache: UsageFileSummaryCache
+  ) async throws -> (snapshot: UsageSnapshot, cache: UsageFileSummaryCache) {
     try await NativeUsageLoader.loadUsage(
       since: currentMonthStartString(now: context.now),
       offline: offline,
       agents: agents,
-      context: context
+      context: context,
+      cache: cache
     )
   }
 

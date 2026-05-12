@@ -53,3 +53,7 @@ func writeTestFile(_ url: URL, contents: String, modifiedAt: TimeInterval) throw
     ofItemAtPath: url.path
   )
 }
+
+func sameByteCountInvalidJSON(as contents: String) -> String {
+  String(repeating: "x", count: contents.utf8.count)
+}
