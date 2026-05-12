@@ -48,7 +48,11 @@ enum ClaudeUsageTracker {
     }
 
     let sinceDate = isoDateString(fromCompactDate: since)
-    let today = formatLocalDay(context.now)
+    let localDayFormatter = makeLocalDayFormatter()
+    let fractionalTimestampFormatter = makeFractionalTimestampFormatter()
+    let plainTimestampFormatter = makePlainTimestampFormatter()
+    let decoder = JSONDecoder()
+    let today = formatLocalDay(context.now, formatter: localDayFormatter)
     var todayCost = 0.0
     var monthCost = 0.0
     var seenKeys = Set<String>()
@@ -70,15 +74,19 @@ enum ClaudeUsageTracker {
             continue
           }
 
-          guard let entry = try? JSONDecoder().decode(Entry.self, from: Data(line.utf8)),
+          guard let entry = try? decoder.decode(Entry.self, from: Data(line.utf8)),
             let timestamp = entry.timestamp,
             let usage = entry.message?.usage,
-            let timestampDate = parseTimestamp(timestamp)
+            let timestampDate = parseTimestamp(
+              timestamp,
+              fractionalFormatter: fractionalTimestampFormatter,
+              plainFormatter: plainTimestampFormatter
+            )
           else {
             continue
           }
 
-          let localDate = formatLocalDay(timestampDate)
+          let localDate = formatLocalDay(timestampDate, formatter: localDayFormatter)
           guard localDate >= sinceDate else {
             continue
           }
@@ -169,27 +177,41 @@ enum ClaudeUsageTracker {
     return files
   }
 
-  private static func formatLocalDay(_ date: Date) -> String {
+  private static func makeLocalDayFormatter() -> DateFormatter {
     let formatter = DateFormatter()
     formatter.calendar = Calendar.current
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.timeZone = .current
     formatter.dateFormat = "yyyy-MM-dd"
-    return formatter.string(from: date)
+    return formatter
   }
 
-  private static func parseTimestamp(_ timestamp: String) -> Date? {
-    // Try parsing with fractional seconds first (most common from Claude API)
-    let formatterWithFractional = ISO8601DateFormatter()
-    formatterWithFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let date = formatterWithFractional.date(from: timestamp) {
+  private static func formatLocalDay(_ date: Date, formatter: DateFormatter) -> String {
+    formatter.string(from: date)
+  }
+
+  private static func makeFractionalTimestampFormatter() -> ISO8601DateFormatter {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter
+  }
+
+  private static func makePlainTimestampFormatter() -> ISO8601DateFormatter {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter
+  }
+
+  private static func parseTimestamp(
+    _ timestamp: String,
+    fractionalFormatter: ISO8601DateFormatter,
+    plainFormatter: ISO8601DateFormatter
+  ) -> Date? {
+    if let date = fractionalFormatter.date(from: timestamp) {
       return date
     }
 
-    // Fall back to plain ISO8601 without fractional seconds
-    let formatterPlain = ISO8601DateFormatter()
-    formatterPlain.formatOptions = [.withInternetDateTime]
-    return formatterPlain.date(from: timestamp)
+    return plainFormatter.date(from: timestamp)
   }
 
   private static func isoDateString(fromCompactDate value: String) -> String {

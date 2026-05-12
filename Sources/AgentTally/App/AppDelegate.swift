@@ -145,10 +145,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       var nextErrorByAgent = self.state.lastErrorByAgent
       for agent in agentsToRefresh {
         do {
-          let snapshot = try await UsageFetcher.fetchUsage(
-            offline: request.pricingMode == .offline,
-            agents: [agent]
-          )
+          let isOffline = request.pricingMode == .offline
+          let snapshot = try await Task.detached(priority: .utility) {
+            try await UsageFetcher.fetchUsage(
+              offline: isOffline,
+              agents: [agent]
+            )
+          }.value
 
           // Check generation after each fetch
           guard self.refreshGenerationGate.isCurrent(generation) else {

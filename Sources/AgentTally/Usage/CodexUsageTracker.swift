@@ -52,7 +52,10 @@ enum CodexUsageTracker {
       return AgentRawData(name: "Codex", found: false, today: 0, month: 0)
     }
 
-    let today = formatLocalDay(context.now)
+    let localDayFormatter = makeLocalDayFormatter()
+    let fractionalTimestampFormatter = makeFractionalTimestampFormatter()
+    let plainTimestampFormatter = makePlainTimestampFormatter()
+    let today = formatLocalDay(context.now, formatter: localDayFormatter)
     let sinceDate = isoDateString(fromCompactDate: since)
     var costsByDate: [String: Double] = [:]
 
@@ -81,7 +84,11 @@ enum CodexUsageTracker {
           let payload = entry["payload"] as? [String: Any],
           payload["type"] as? String == "token_count",
           let timestamp = entry["timestamp"] as? String,
-          let timestampDate = parseTimestamp(timestamp),
+          let timestampDate = parseTimestamp(
+            timestamp,
+            fractionalFormatter: fractionalTimestampFormatter,
+            plainFormatter: plainTimestampFormatter
+          ),
           let modelName = currentModel,
           let modelPricing = UsagePricing.lookupPricing(
             modelName: modelName,
@@ -117,7 +124,7 @@ enum CodexUsageTracker {
           outputTokens: delta.outputTokens,
           pricing: modelPricing
         )
-        let day = formatLocalDay(timestampDate)
+        let day = formatLocalDay(timestampDate, formatter: localDayFormatter)
         costsByDate[day, default: 0] += cost
       }
     }
@@ -166,26 +173,44 @@ enum CodexUsageTracker {
     return files
   }
 
-  private static func formatLocalDay(_ date: Date) -> String {
+  private static func makeLocalDayFormatter() -> DateFormatter {
     let formatter = DateFormatter()
     formatter.calendar = Calendar.current
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.timeZone = .current
     formatter.dateFormat = "yyyy-MM-dd"
-    return formatter.string(from: date)
+    return formatter
+  }
+
+  private static func formatLocalDay(_ date: Date, formatter: DateFormatter) -> String {
+    formatter.string(from: date)
   }
 
   private static func isoDateString(fromCompactDate value: String) -> String {
     "\(value.prefix(4))-\(value.dropFirst(4).prefix(2))-\(value.dropFirst(6).prefix(2))"
   }
 
-  private static func parseTimestamp(_ value: String) -> Date? {
-    let fractionalFormatter = ISO8601DateFormatter()
-    fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  private static func makeFractionalTimestampFormatter() -> ISO8601DateFormatter {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter
+  }
+
+  private static func makePlainTimestampFormatter() -> ISO8601DateFormatter {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter
+  }
+
+  private static func parseTimestamp(
+    _ value: String,
+    fractionalFormatter: ISO8601DateFormatter,
+    plainFormatter: ISO8601DateFormatter
+  ) -> Date? {
     if let date = fractionalFormatter.date(from: value) {
       return date
     }
 
-    return ISO8601DateFormatter().date(from: value)
+    return plainFormatter.date(from: value)
   }
 }
