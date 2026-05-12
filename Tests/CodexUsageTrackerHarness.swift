@@ -7,6 +7,7 @@ func testCodexUsageTracker() throws {
   try testCodexTrackerMatchesAliasedModelPricing()
   try testCodexTrackerTreatsEmptyCodexHomeLikeDefault()
   try testCodexTrackerReusesUnchangedCachedFileSummary()
+  try testCodexTrackerParsesOnlyAppendedCachedFileSuffix()
 }
 
 private let codexTrackerNow = Calendar.current.date(
@@ -282,4 +283,63 @@ private func testCodexTrackerReusesUnchangedCachedFileSummary() throws {
   )
 
   try expectNear(changed.rawData.today, 0, "changed file identity should reparse the Codex file")
+}
+
+private func testCodexTrackerParsesOnlyAppendedCachedFileSuffix() throws {
+  let homeDirectory = try makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: homeDirectory) }
+
+  let sessionFile =
+    homeDirectory
+    .appendingPathComponent(".codex")
+    .appendingPathComponent("sessions")
+    .appendingPathComponent("2026")
+    .appendingPathComponent("05")
+    .appendingPathComponent("04")
+    .appendingPathComponent("session.jsonl")
+
+  let modelLine =
+    #"{"timestamp":"2026-05-04T08:00:00Z","type":"turn_context","payload":{"model":"gpt-5"}}"#
+  let firstUsageLine =
+    #"{"timestamp":"2026-05-04T08:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":250,"output_tokens":100}}}}"#
+  let secondUsageLine =
+    #"{"timestamp":"2026-05-04T08:02:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":2000,"cached_input_tokens":500,"output_tokens":200}}}}"#
+  let firstContents = "\(modelLine)\n\(firstUsageLine)\n"
+  try writeTestFile(sessionFile, contents: firstContents, modifiedAt: 6_000)
+
+  let context = UsageTrackingContext(
+    environment: [:],
+    homeDirectory: homeDirectory,
+    now: codexTrackerNow,
+    pricingDataLoader: { _ in Data() }
+  )
+  let first = CodexUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: context,
+    cache: CodexUsageFileSummaryCache()
+  )
+
+  try writeTestFile(
+    sessionFile,
+    contents:
+      "\(sameByteCountInvalidJSON(as: modelLine))\n\(sameByteCountInvalidJSON(as: firstUsageLine))\n\(modelLine)\n\(secondUsageLine)\n",
+    modifiedAt: 6_001
+  )
+  let appended = CodexUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: context,
+    cache: first.cache
+  )
+
+  try expect(
+    appended.rawData.today > first.rawData.today,
+    "append-only Codex changes should include appended suffix costs"
+  )
+  try expectNear(
+    appended.rawData.today,
+    first.rawData.today * 3,
+    "append-only Codex changes should reuse cached prefix totals and parse only the suffix"
+  )
 }

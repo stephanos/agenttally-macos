@@ -33,11 +33,25 @@ enum CodexUsageTracker {
       self.outputTokens = dictionary["output_tokens"] as? Int ?? 0
     }
 
+    init(totals: CodexTokenTotals) {
+      self.inputTokens = totals.inputTokens
+      self.cachedInputTokens = totals.cachedInputTokens
+      self.outputTokens = totals.outputTokens
+    }
+
     func subtracting(_ previous: TokenUsage) -> TokenUsage {
       TokenUsage(
         inputTokens: max(0, inputTokens - previous.inputTokens),
         cachedInputTokens: max(0, cachedInputTokens - previous.cachedInputTokens),
         outputTokens: max(0, outputTokens - previous.outputTokens)
+      )
+    }
+
+    var totals: CodexTokenTotals {
+      CodexTokenTotals(
+        inputTokens: inputTokens,
+        cachedInputTokens: cachedInputTokens,
+        outputTokens: outputTokens
       )
     }
   }
@@ -89,19 +103,43 @@ enum CodexUsageTracker {
       activeCacheKeys.insert(cacheKey)
 
       let fileCostsByDate: [String: Double]
+      let parserState: CodexUsageParserState
       if let cached = nextCache.files[cacheKey], cached.identity == identity {
         fileCostsByDate = cached.costsByDate
-      } else {
-        fileCostsByDate = parseCostsByDate(
+        parserState = cached.parserState
+      } else if let cached = nextCache.files[cacheKey],
+        canParseAppendedSuffix(cached: cached.identity, current: identity)
+      {
+        let parsed = parseCostsByDate(
           from: sessionFile,
+          startingAt: UInt64(cached.identity.size),
           pricing: pricing,
+          initialState: cached.parserState,
           localDayFormatter: localDayFormatter,
           fractionalTimestampFormatter: fractionalTimestampFormatter,
           plainTimestampFormatter: plainTimestampFormatter
         )
+        fileCostsByDate = mergeCosts(cached.costsByDate, parsed.costsByDate)
+        parserState = parsed.parserState
+      } else {
+        let parsed = parseCostsByDate(
+          from: sessionFile,
+          startingAt: 0,
+          pricing: pricing,
+          initialState: .empty,
+          localDayFormatter: localDayFormatter,
+          fractionalTimestampFormatter: fractionalTimestampFormatter,
+          plainTimestampFormatter: plainTimestampFormatter
+        )
+        fileCostsByDate = parsed.costsByDate
+        parserState = parsed.parserState
+      }
+
+      if nextCache.files[cacheKey]?.identity != identity {
         nextCache.files[cacheKey] = CodexUsageFileSummary(
           identity: identity,
-          costsByDate: fileCostsByDate
+          costsByDate: fileCostsByDate,
+          parserState: parserState
         )
       }
 
@@ -125,16 +163,18 @@ enum CodexUsageTracker {
 
   private static func parseCostsByDate(
     from sessionFile: URL,
+    startingAt offset: UInt64,
     pricing: [String: ModelPricing],
+    initialState: CodexUsageParserState,
     localDayFormatter: DateFormatter,
     fractionalTimestampFormatter: ISO8601DateFormatter,
     plainTimestampFormatter: ISO8601DateFormatter
-  ) -> [String: Double] {
+  ) -> (costsByDate: [String: Double], parserState: CodexUsageParserState) {
     var costsByDate: [String: Double] = [:]
-    var currentModel: String?
-    var previousTotals: TokenUsage?
+    var currentModel = initialState.currentModel
+    var previousTotals = initialState.previousTotals.map(TokenUsage.init(totals:))
 
-    JSONLLineReader.readLines(from: sessionFile) { line in
+    JSONLLineReader.readLines(from: sessionFile, startingAt: offset) { line in
       guard !line.isEmpty,
         let entry = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
       else {
@@ -194,7 +234,33 @@ enum CodexUsageTracker {
       costsByDate[day, default: 0] += cost
     }
 
-    return costsByDate
+    return (
+      costsByDate,
+      CodexUsageParserState(
+        currentModel: currentModel,
+        previousTotals: previousTotals?.totals
+      )
+    )
+  }
+
+  private static func mergeCosts(
+    _ cached: [String: Double],
+    _ appended: [String: Double]
+  ) -> [String: Double] {
+    var merged = cached
+    for (day, cost) in appended {
+      merged[day, default: 0] += cost
+    }
+    return merged
+  }
+
+  private static func canParseAppendedSuffix(
+    cached: UsageFileIdentity,
+    current: UsageFileIdentity
+  ) -> Bool {
+    cached.pricingFingerprint == current.pricingFingerprint
+      && cached.size >= 0
+      && current.size > cached.size
   }
 
   private static func codexSessionsDirectory(context: UsageTrackingContext) -> URL {

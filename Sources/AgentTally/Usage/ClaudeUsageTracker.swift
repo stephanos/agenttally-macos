@@ -95,9 +95,25 @@ enum ClaudeUsageTracker {
         let records: [ClaudeUsageRecord]
         if let cached = nextCache.files[cacheKey], cached.identity == identity {
           records = cached.records
+        } else if let cached = nextCache.files[cacheKey],
+          canParseAppendedSuffix(cached: cached.identity, current: identity)
+        {
+          records =
+            cached.records
+            + parseRecords(
+              from: fileURL,
+              startingAt: UInt64(cached.identity.size),
+              projectName: projectName,
+              pricing: pricing,
+              decoder: decoder,
+              localDayFormatter: localDayFormatter,
+              fractionalTimestampFormatter: fractionalTimestampFormatter,
+              plainTimestampFormatter: plainTimestampFormatter
+            )
         } else {
           records = parseRecords(
             from: fileURL,
+            startingAt: 0,
             projectName: projectName,
             pricing: pricing,
             decoder: decoder,
@@ -105,6 +121,9 @@ enum ClaudeUsageTracker {
             fractionalTimestampFormatter: fractionalTimestampFormatter,
             plainTimestampFormatter: plainTimestampFormatter
           )
+        }
+
+        if nextCache.files[cacheKey]?.identity != identity {
           nextCache.files[cacheKey] = ClaudeUsageFileSummary(
             identity: identity,
             records: records
@@ -136,6 +155,7 @@ enum ClaudeUsageTracker {
 
   private static func parseRecords(
     from fileURL: URL,
+    startingAt offset: UInt64,
     projectName: String,
     pricing: [String: ModelPricing],
     decoder: JSONDecoder,
@@ -144,7 +164,7 @@ enum ClaudeUsageTracker {
     plainTimestampFormatter: ISO8601DateFormatter
   ) -> [ClaudeUsageRecord] {
     var records: [ClaudeUsageRecord] = []
-    JSONLLineReader.readLines(from: fileURL) { line in
+    JSONLLineReader.readLines(from: fileURL, startingAt: offset) { line in
       guard let entry = try? decoder.decode(Entry.self, from: Data(line.utf8)),
         let timestamp = entry.timestamp,
         let usage = entry.message?.usage,
@@ -198,6 +218,15 @@ enum ClaudeUsageTracker {
     }
 
     return records
+  }
+
+  private static func canParseAppendedSuffix(
+    cached: UsageFileIdentity,
+    current: UsageFileIdentity
+  ) -> Bool {
+    cached.pricingFingerprint == current.pricingFingerprint
+      && cached.size >= 0
+      && current.size > cached.size
   }
 
   private static func claudeProjectsDirectories(context: UsageTrackingContext) -> [URL] {

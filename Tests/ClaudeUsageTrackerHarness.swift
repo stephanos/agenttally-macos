@@ -6,6 +6,7 @@ func testClaudeUsageTracker() throws {
   try testClaudeTrackerSkipsMalformedLines()
   try testClaudeTrackerParsesFractionalSecondTimestamps()
   try testClaudeTrackerReusesUnchangedCachedFileSummary()
+  try testClaudeTrackerParsesOnlyAppendedCachedFileSuffix()
 }
 
 private let claudeTrackerNow = Calendar.current.date(
@@ -219,4 +220,53 @@ private func testClaudeTrackerReusesUnchangedCachedFileSummary() throws {
   )
 
   try expectNear(changed.rawData.today, 0, "changed file identity should reparse the file")
+}
+
+private func testClaudeTrackerParsesOnlyAppendedCachedFileSuffix() throws {
+  let homeDirectory = try makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: homeDirectory) }
+
+  let usageFile =
+    homeDirectory
+    .appendingPathComponent(".claude")
+    .appendingPathComponent("projects")
+    .appendingPathComponent("demo")
+    .appendingPathComponent("usage.jsonl")
+
+  let firstLine =
+    #"{"sessionId":"session-1","timestamp":"2026-05-04T08:00:00Z","costUSD":1.25,"message":{"id":"m1","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1000,"output_tokens":500}}}"#
+  let secondLine =
+    #"{"sessionId":"session-1","timestamp":"2026-05-04T08:01:00Z","costUSD":2.50,"message":{"id":"m2","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1000,"output_tokens":500}}}"#
+  try writeTestFile(usageFile, contents: "\(firstLine)\n", modifiedAt: 6_000)
+
+  let context = UsageTrackingContext(
+    environment: [:],
+    homeDirectory: homeDirectory,
+    now: claudeTrackerNow,
+    pricingDataLoader: { _ in Data() }
+  )
+  let first = ClaudeUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: context,
+    cache: ClaudeUsageFileSummaryCache()
+  )
+
+  try writeTestFile(
+    usageFile,
+    contents: "\(sameByteCountInvalidJSON(as: firstLine))\n\(secondLine)\n",
+    modifiedAt: 6_001
+  )
+  let appended = ClaudeUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: context,
+    cache: first.cache
+  )
+
+  try expectNear(
+    appended.rawData.today,
+    3.75,
+    "append-only Claude changes should reuse cached prefix records and parse only the suffix"
+  )
 }

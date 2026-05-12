@@ -124,6 +124,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     refreshTask?.cancel()
     refreshTask = Task {
+      defer {
+        MemoryPressureRelief.relieve()
+      }
+
       let generation = self.refreshGenerationGate.nextGeneration()
 
       let usageDataScan = await Task.detached(priority: .utility) {

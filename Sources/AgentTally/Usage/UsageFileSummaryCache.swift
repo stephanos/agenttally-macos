@@ -34,6 +34,20 @@ struct CodexUsageFileSummaryCache: Sendable {
 struct CodexUsageFileSummary: Equatable, Sendable {
   let identity: UsageFileIdentity
   let costsByDate: [String: Double]
+  let parserState: CodexUsageParserState
+}
+
+struct CodexUsageParserState: Equatable, Sendable {
+  let currentModel: String?
+  let previousTotals: CodexTokenTotals?
+
+  static let empty = CodexUsageParserState(currentModel: nil, previousTotals: nil)
+}
+
+struct CodexTokenTotals: Equatable, Sendable {
+  let inputTokens: Int
+  let cachedInputTokens: Int
+  let outputTokens: Int
 }
 
 enum UsageFileCacheKey {

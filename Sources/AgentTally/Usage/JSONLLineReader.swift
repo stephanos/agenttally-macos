@@ -4,12 +4,20 @@ enum JSONLLineReader {
   private static let chunkSize = 64 * 1024
   private static let newline = UInt8(ascii: "\n")
 
-  static func readLines(from fileURL: URL, handleLine: (String) -> Void) {
+  static func readLines(
+    from fileURL: URL,
+    startingAt offset: UInt64 = 0,
+    handleLine: (String) -> Void
+  ) {
     guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
       return
     }
     defer {
       try? fileHandle.close()
+    }
+
+    if offset > 0 {
+      try? fileHandle.seek(toOffset: offset)
     }
 
     var pending = Data()
