@@ -12,21 +12,17 @@ The app shows Claude Code and Codex spend for today and the current month.
 
 ## Install
 
-Download the latest packaged build from GitHub Releases:
-
-- <https://github.com/stephanos/agenttally-macos/releases>
-
-Then:
-
-1. Download `AgentTally.app.zip`
+1. Download [`AgentTally.app.zip`](https://github.com/stephanos/agenttally-macos/releases/latest)
 2. Unzip it
 3. Move `AgentTally.app` to `/Applications`
 4. Open `AgentTally.app`
 
 On first launch, macOS may ask you to confirm opening the app.
+If macOS warns that the app cannot be opened because it cannot check it for malware, remove the quarantine attribute and open it again:
 
-AgentTally checks GitHub Releases for updates once per day and includes a
-`Check for Updates...` menu item.
+```sh
+xattr -dr com.apple.quarantine /Applications/AgentTally.app
+```
 
 ## Development
 
@@ -43,15 +39,12 @@ mise run install
 ```
 
 The install task copies the bundle to `/Applications/AgentTally.app` and launches it.
-It also enables "Open at Login" by default the first time the app runs.
 
 For local development:
 
 ```sh
 mise run dev
 ```
-
-`mise` manages the Bun toolchain for formatting tasks and uses the system Swift toolchain. The app tracks Claude Code and Codex usage natively in Swift and refreshes cached pricing dynamically at runtime.
 
 ## Releases
 
