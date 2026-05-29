@@ -55,7 +55,8 @@ private func testClaudeTrackerUsesLastSeenTimestampWhenMissing() throws {
   let homeDirectory = try makeTemporaryDirectory()
   defer { try? FileManager.default.removeItem(at: homeDirectory) }
 
-  let usageFile = homeDirectory.appendingPathComponent(".claude").appendingPathComponent("history.jsonl")
+  let usageFile = homeDirectory.appendingPathComponent(".claude").appendingPathComponent(
+    "history.jsonl")
 
   try writeTestFile(
     usageFile,
@@ -84,12 +85,13 @@ private func testClaudeTrackerSupportsTopLevelUsageAndModel() throws {
   let homeDirectory = try makeTemporaryDirectory()
   defer { try? FileManager.default.removeItem(at: homeDirectory) }
 
-  let usageFile = homeDirectory.appendingPathComponent(".claude").appendingPathComponent("history.jsonl")
+  let usageFile = homeDirectory.appendingPathComponent(".claude").appendingPathComponent(
+    "history.jsonl")
 
   try writeTestFile(
     usageFile,
     contents: [
-      #"{"timestamp":"2026-05-04T08:00:00Z","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1000,"output_tokens":500}}"#,
+      #"{"timestamp":"2026-05-04T08:00:00Z","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1000,"output_tokens":500}}"#
     ].joined(separator: "\n"),
     modifiedAt: 3_000
   )
@@ -119,12 +121,13 @@ private func testClaudeTrackerUsesCostUSDWithoutUsage() throws {
   let homeDirectory = try makeTemporaryDirectory()
   defer { try? FileManager.default.removeItem(at: homeDirectory) }
 
-  let usageFile = homeDirectory.appendingPathComponent(".claude").appendingPathComponent("history.jsonl")
+  let usageFile = homeDirectory.appendingPathComponent(".claude").appendingPathComponent(
+    "history.jsonl")
 
   try writeTestFile(
     usageFile,
     contents: [
-      #"{"timestamp":"2026-05-04T08:00:00Z","costUSD":0.75}"#,
+      #"{"timestamp":"2026-05-04T08:00:00Z","costUSD":0.75}"#
     ].joined(separator: "\n"),
     modifiedAt: 4_000
   )
