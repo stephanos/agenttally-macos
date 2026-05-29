@@ -14,6 +14,8 @@ enum ClaudeUsageTracker {
     let sessionId: String?
     let requestId: String?
     let costUSD: Double?
+    let model: String?
+    let usage: Usage?
     let message: Message?
   }
 
@@ -53,8 +55,8 @@ enum ClaudeUsageTracker {
     context: UsageTrackingContext,
     cache: ClaudeUsageFileSummaryCache
   ) -> (rawData: AgentRawData, cache: ClaudeUsageFileSummaryCache) {
-    let projectsDirectories = claudeProjectsDirectories(context: context)
-    guard !projectsDirectories.isEmpty else {
+    let directories = claudeLogDirectories(context: context)
+    guard !directories.isEmpty else {
       return (
         AgentRawData(name: "Claude Code", found: false, today: 0, month: 0),
         ClaudeUsageFileSummaryCache()
@@ -74,10 +76,10 @@ enum ClaudeUsageTracker {
     var nextCache = cache
     var activeCacheKeys = Set<String>()
 
-    for projectsDirectory in projectsDirectories {
-      for fileURL in walkJSONLFiles(under: projectsDirectory) {
+    for directory in directories {
+      for fileURL in walkJSONLFiles(under: directory) {
         let projectName =
-          fileURL.path.replacingOccurrences(of: projectsDirectory.path + "/", with: "").split(
+          fileURL.path.replacingOccurrences(of: directory.path + "/", with: "").split(
             separator: "/"
           ).first.map(String.init) ?? "unknown"
 
@@ -164,15 +166,54 @@ enum ClaudeUsageTracker {
     plainTimestampFormatter: ISO8601DateFormatter
   ) -> [ClaudeUsageRecord] {
     var records: [ClaudeUsageRecord] = []
+    var lastSeenTimestamp: Date?
+
     JSONLLineReader.readLines(from: fileURL, startingAt: offset) { line in
-      guard let entry = try? decoder.decode(Entry.self, from: Data(line.utf8)),
-        let timestamp = entry.timestamp,
-        let usage = entry.message?.usage,
-        let timestampDate = parseTimestamp(
-          timestamp,
+      guard let entry = try? decoder.decode(Entry.self, from: Data(line.utf8)) else {
+        return
+      }
+
+      let currentTimestamp = entry.timestamp.flatMap {
+        parseTimestamp(
+          $0,
           fractionalFormatter: fractionalTimestampFormatter,
           plainFormatter: plainTimestampFormatter
         )
+      }
+
+      if let currentTimestamp {
+        lastSeenTimestamp = currentTimestamp
+      }
+
+      guard let effectiveTimestamp = lastSeenTimestamp else {
+        return
+      }
+
+      let usage = entry.usage ?? entry.message?.usage
+      let model = entry.model ?? entry.message?.model
+
+      let calculatedCost =
+        model.flatMap {
+          UsagePricing.lookupPricing(
+            modelName: $0,
+            pricing: pricing,
+            providerPrefixes: providerPrefixes
+          )
+        }.flatMap { pricing in
+          usage.map { usage in
+            UsagePricing.calculateClaudeCost(
+              inputTokens: usage.inputTokens ?? 0,
+              outputTokens: usage.outputTokens ?? 0,
+              cacheCreationInputTokens: usage.cacheCreationInputTokens ?? 0,
+              cacheReadInputTokens: usage.cacheReadInputTokens ?? 0,
+              pricing: pricing
+            )
+          }
+        } ?? 0
+
+      let explicitCost = entry.costUSD
+      guard let effectiveCost = (explicitCost ?? (usage != nil ? calculatedCost : nil)),
+        effectiveCost.isFinite
       else {
         return
       }
@@ -182,36 +223,12 @@ enum ClaudeUsageTracker {
       let dedupeKey =
         entry.requestId
         ?? entry.message?.id
-        ?? "\(fileURL.path)|\(timestamp)|\(sessionId)|\(entry.message?.model ?? "<unknown>")|\(usage.inputTokens ?? 0)|\(usage.outputTokens ?? 0)|\(usage.cacheCreationInputTokens ?? 0)|\(usage.cacheReadInputTokens ?? 0)"
-
-      let calculatedCost =
-        entry.message?.model.flatMap {
-          UsagePricing.lookupPricing(
-            modelName: $0,
-            pricing: pricing,
-            providerPrefixes: providerPrefixes
-          )
-        }.map {
-          UsagePricing.calculateClaudeCost(
-            inputTokens: usage.inputTokens ?? 0,
-            outputTokens: usage.outputTokens ?? 0,
-            cacheCreationInputTokens: usage.cacheCreationInputTokens ?? 0,
-            cacheReadInputTokens: usage.cacheReadInputTokens ?? 0,
-            pricing: $0
-          )
-        } ?? 0
-
-      let effectiveCost =
-        if let explicitCost = entry.costUSD, explicitCost.isFinite {
-          explicitCost
-        } else {
-          calculatedCost
-        }
+        ?? "\(fileURL.path)|\(entry.timestamp ?? "<no-ts>")|\(sessionId)|\(model ?? "<unknown>")|\(usage?.inputTokens ?? 0)|\(usage?.outputTokens ?? 0)|\(usage?.cacheCreationInputTokens ?? 0)|\(usage?.cacheReadInputTokens ?? 0)"
 
       records.append(
         ClaudeUsageRecord(
           dedupeKey: dedupeKey,
-          localDate: formatLocalDay(timestampDate, formatter: localDayFormatter),
+          localDate: formatLocalDay(effectiveTimestamp, formatter: localDayFormatter),
           cost: effectiveCost
         )
       )
@@ -229,7 +246,7 @@ enum ClaudeUsageTracker {
       && current.size > cached.size
   }
 
-  private static func claudeProjectsDirectories(context: UsageTrackingContext) -> [URL] {
+  private static func claudeLogDirectories(context: UsageTrackingContext) -> [URL] {
     let configured = (context.environment["CLAUDE_CONFIG_DIR"] ?? "")
       .split(separator: ",")
       .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -243,10 +260,7 @@ enum ClaudeUsageTracker {
       ]
       : configured.map { URL(fileURLWithPath: $0) }
 
-    return
-      roots
-      .map { $0.appendingPathComponent("projects") }
-      .filter { FileManager.default.fileExists(atPath: $0.path) }
+    return roots.filter { FileManager.default.fileExists(atPath: $0.path) }
   }
 
   private static func walkJSONLFiles(under directory: URL) -> [URL] {

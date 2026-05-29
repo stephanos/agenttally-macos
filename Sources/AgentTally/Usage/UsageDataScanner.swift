@@ -163,20 +163,20 @@ enum UsageDataScanner {
   ) -> Date? {
     lines.append("claude-config-dir|\(escape(environment["CLAUDE_CONFIG_DIR"] ?? ""))")
 
-    let projectsDirectories = claudeProjectsDirectories(
+    let logDirectories = claudeLogDirectories(
       environment: environment,
       homeDirectory: homeDirectory,
       fileManager: fileManager
     )
-    if projectsDirectories.isEmpty {
-      lines.append("claude|projects-missing")
+    if logDirectories.isEmpty {
+      lines.append("claude|log-directories-missing")
       return nil
     }
 
     var latestUsageDetectedAt: Date?
-    for projectsDirectory in projectsDirectories {
+    for logDirectory in logDirectories {
       let directoryLatestUsageDetectedAt = appendJSONLFileMetadata(
-        under: projectsDirectory,
+        under: logDirectory,
         scope: "claude",
         to: &lines,
         fileManager: fileManager
@@ -216,7 +216,7 @@ enum UsageDataScanner {
     }
   }
 
-  private static func claudeProjectsDirectories(
+  private static func claudeLogDirectories(
     environment: [String: String],
     homeDirectory: URL,
     fileManager: FileManager
@@ -242,27 +242,22 @@ enum UsageDataScanner {
     }
 
     var seen = Set<String>()
-    var projectsDirectories: [URL] = []
+    var logDirectories: [URL] = []
     for directory in candidateDirectories {
       let normalizedDirectory = directory.standardizedFileURL
       let normalizedPath = normalizedDirectory.path
-      let projectsDirectory =
-        normalizedDirectory
-        .appendingPathComponent(claudeProjectsDirectoryName)
-        .standardizedFileURL
 
       guard !seen.contains(normalizedPath),
-        isDirectory(normalizedDirectory, fileManager: fileManager),
-        isDirectory(projectsDirectory, fileManager: fileManager)
+        isDirectory(normalizedDirectory, fileManager: fileManager)
       else {
         continue
       }
 
       seen.insert(normalizedPath)
-      projectsDirectories.append(projectsDirectory)
+      logDirectories.append(normalizedDirectory)
     }
 
-    return projectsDirectories
+    return logDirectories
   }
 
   private static func codexHomeDirectory(

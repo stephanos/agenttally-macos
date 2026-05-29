@@ -7,6 +7,9 @@ func testClaudeUsageTracker() throws {
   try testClaudeTrackerParsesFractionalSecondTimestamps()
   try testClaudeTrackerReusesUnchangedCachedFileSummary()
   try testClaudeTrackerParsesOnlyAppendedCachedFileSuffix()
+  try testClaudeTrackerUsesLastSeenTimestampWhenMissing()
+  try testClaudeTrackerSupportsTopLevelUsageAndModel()
+  try testClaudeTrackerUsesCostUSDWithoutUsage()
 }
 
 private let claudeTrackerNow = Calendar.current.date(
@@ -19,8 +22,7 @@ private func testClaudeTrackerUsesCostUSDWhenPresent() throws {
 
   let usageFile =
     homeDirectory
-    .appendingPathComponent(".config")
-    .appendingPathComponent("claude")
+    .appendingPathComponent(".claude")
     .appendingPathComponent("projects")
     .appendingPathComponent("demo")
     .appendingPathComponent("usage.jsonl")
@@ -47,6 +49,98 @@ private func testClaudeTrackerUsesCostUSDWhenPresent() throws {
 
   try expect(raw.found, "Claude should be found when usage files exist")
   try expect(raw.today > 1.25, "today should include explicit and calculated entries")
+}
+
+private func testClaudeTrackerUsesLastSeenTimestampWhenMissing() throws {
+  let homeDirectory = try makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: homeDirectory) }
+
+  let usageFile = homeDirectory.appendingPathComponent(".claude").appendingPathComponent("history.jsonl")
+
+  try writeTestFile(
+    usageFile,
+    contents: [
+      #"{"type":"user","timestamp":"2026-05-04T08:00:00Z"}"#,
+      #"{"type":"assistant","costUSD":0.5,"message":{"id":"m1","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":50}}}"#,
+    ].joined(separator: "\n"),
+    modifiedAt: 2_000
+  )
+
+  let raw = ClaudeUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: UsageTrackingContext(
+      environment: [:],
+      homeDirectory: homeDirectory,
+      now: claudeTrackerNow,
+      pricingDataLoader: { _ in Data() }
+    )
+  )
+
+  try expectNear(raw.today, 0.5, "should use last seen timestamp when missing from the record")
+}
+
+private func testClaudeTrackerSupportsTopLevelUsageAndModel() throws {
+  let homeDirectory = try makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: homeDirectory) }
+
+  let usageFile = homeDirectory.appendingPathComponent(".claude").appendingPathComponent("history.jsonl")
+
+  try writeTestFile(
+    usageFile,
+    contents: [
+      #"{"timestamp":"2026-05-04T08:00:00Z","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1000,"output_tokens":500}}"#,
+    ].joined(separator: "\n"),
+    modifiedAt: 3_000
+  )
+
+  let raw = ClaudeUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: UsageTrackingContext(
+      environment: [:],
+      homeDirectory: homeDirectory,
+      now: claudeTrackerNow,
+      pricingDataLoader: { _ in Data() }
+    )
+  )
+
+  let expectedCost = UsagePricing.calculateClaudeCost(
+    inputTokens: 1000,
+    outputTokens: 500,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    pricing: UsagePricing.bundled["claude-sonnet-4-20250514"]!
+  )
+  try expectNear(raw.today, expectedCost, "should support top-level model and usage fields")
+}
+
+private func testClaudeTrackerUsesCostUSDWithoutUsage() throws {
+  let homeDirectory = try makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: homeDirectory) }
+
+  let usageFile = homeDirectory.appendingPathComponent(".claude").appendingPathComponent("history.jsonl")
+
+  try writeTestFile(
+    usageFile,
+    contents: [
+      #"{"timestamp":"2026-05-04T08:00:00Z","costUSD":0.75}"#,
+    ].joined(separator: "\n"),
+    modifiedAt: 4_000
+  )
+
+  let raw = ClaudeUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: UsageTrackingContext(
+      environment: [:],
+      homeDirectory: homeDirectory,
+      now: claudeTrackerNow,
+      pricingDataLoader: { _ in Data() }
+    )
+  )
+
+  try expectNear(raw.today, 0.75, "should count costUSD even if usage data is missing")
 }
 
 private func testClaudeTrackerDeduplicatesDuplicateMessages() throws {
