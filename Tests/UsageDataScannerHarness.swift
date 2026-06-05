@@ -3,8 +3,19 @@ import Foundation
 func testUsageDataScanner() throws {
   try testClaudeFingerprintIgnoresNonUsageFiles()
   try testCodexFingerprintScopesToCurrentMonthSessions()
+  try testCodexFingerprintIncludesPreviousMonthSessionModifiedThisMonth()
   try testUsageDataScannerTreatsEmptyCodexHomeLikeDefault()
 }
+
+private let usageScannerCurrentMonthModifiedAt = Calendar(identifier: .gregorian).date(
+  from: DateComponents(
+    timeZone: TimeZone(secondsFromGMT: 0),
+    year: 2026,
+    month: 5,
+    day: 3,
+    hour: 12
+  )
+)!.timeIntervalSince1970
 
 private func testClaudeFingerprintIgnoresNonUsageFiles() throws {
   let fileManager = FileManager.default
@@ -97,6 +108,43 @@ private func testCodexFingerprintScopesToCurrentMonthSessions() throws {
   try expect(
     changedScan.agents[.codex]?.lastUsageDetectedAt == Date(timeIntervalSince1970: 3_000),
     "Codex scan should expose the latest current-month session modification time"
+  )
+}
+
+private func testCodexFingerprintIncludesPreviousMonthSessionModifiedThisMonth() throws {
+  let fileManager = FileManager.default
+  let homeDirectory = try makeTemporaryDirectory()
+  defer { try? fileManager.removeItem(at: homeDirectory) }
+
+  let codexHome = homeDirectory.appendingPathComponent("codex-home")
+  let previousMonthFile =
+    codexHome
+    .appendingPathComponent("sessions")
+    .appendingPathComponent("2026")
+    .appendingPathComponent("04")
+    .appendingPathComponent("30")
+    .appendingPathComponent("continued.jsonl")
+
+  try writeTestFile(previousMonthFile, contents: "old\n", modifiedAt: 1_000)
+
+  let environment = ["CODEX_HOME": codexHome.path]
+  let firstScan = testScan(homeDirectory: homeDirectory, environment: environment)
+
+  try writeTestFile(
+    previousMonthFile,
+    contents: "continued\n",
+    modifiedAt: usageScannerCurrentMonthModifiedAt
+  )
+  let changedScan = testScan(homeDirectory: homeDirectory, environment: environment)
+
+  try expect(
+    firstScan.agents[.codex]?.fingerprint != changedScan.agents[.codex]?.fingerprint,
+    "Codex fingerprint should include previous-month sessions modified this month"
+  )
+  try expect(
+    changedScan.agents[.codex]?.lastUsageDetectedAt
+      == Date(timeIntervalSince1970: usageScannerCurrentMonthModifiedAt),
+    "Codex scan should expose current-month modifications to previous-month sessions"
   )
 }
 

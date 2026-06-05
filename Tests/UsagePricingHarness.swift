@@ -101,6 +101,10 @@ private func testBundledPricingIncludesCurrentFallbackModels() throws {
     UsagePricing.bundled["gpt-5.2-codex"] != nil,
     "bundled pricing should retain GPT-5.2 Codex"
   )
+  try expect(
+    UsagePricing.bundled["gpt-5.5"] != nil,
+    "bundled pricing should retain GPT-5.5"
+  )
 }
 
 private func testLookupPricingMatchesAliasesAndProviders() throws {

@@ -50,6 +50,7 @@ enum UsageDataScanner {
     let environment: [String: String]
     let homeDirectory: URL
     let fileManager: FileManager
+    let timeZone: TimeZone
   }
 
   private protocol UsageDataSource: Sendable {
@@ -89,7 +90,8 @@ enum UsageDataScanner {
         monthStart: context.monthStart,
         environment: context.environment,
         homeDirectory: context.homeDirectory,
-        fileManager: context.fileManager
+        fileManager: context.fileManager,
+        timeZone: context.timeZone
       )
     }
   }
@@ -129,7 +131,8 @@ enum UsageDataScanner {
       monthStart: monthStart,
       environment: environment,
       homeDirectory: homeDirectory,
-      fileManager: fileManager
+      fileManager: fileManager,
+      timeZone: timeZone
     )
 
     let sources: [any UsageDataSource] = [
@@ -194,12 +197,14 @@ enum UsageDataScanner {
     monthStart: String,
     environment: [String: String],
     homeDirectory: URL,
-    fileManager: FileManager
+    fileManager: FileManager,
+    timeZone: TimeZone
   ) -> Date? {
     let codexHome = codexHomeDirectory(environment: environment, homeDirectory: homeDirectory)
     let sessionsDirectory = codexHome.appendingPathComponent(codexSessionsDirectoryName)
     let sinceDate =
       "\(monthStart.prefix(4))-\(monthStart.dropFirst(4).prefix(2))-\(monthStart.dropFirst(6).prefix(2))"
+    let startDate = monthStartDate(from: monthStart, timeZone: timeZone)
 
     lines.append("codex-home|\(escape(environment["CODEX_HOME"] ?? ""))")
     return appendJSONLFileMetadata(
@@ -208,12 +213,35 @@ enum UsageDataScanner {
       to: &lines,
       fileManager: fileManager
     ) { fileURL in
-      guard let sessionDate = codexSessionDate(for: fileURL, sessionsDirectory: sessionsDirectory)
-      else {
-        return false
-      }
-      return sessionDate >= sinceDate
+      shouldIncludeCodexFile(
+        fileURL,
+        sessionsDirectory: sessionsDirectory,
+        sinceDate: sinceDate,
+        startDate: startDate,
+        fileManager: fileManager
+      )
     }
+  }
+
+  private static func shouldIncludeCodexFile(
+    _ fileURL: URL,
+    sessionsDirectory: URL,
+    sinceDate: String,
+    startDate: Date?,
+    fileManager: FileManager
+  ) -> Bool {
+    if let sessionDate = codexSessionDate(for: fileURL, sessionsDirectory: sessionsDirectory),
+      sessionDate >= sinceDate
+    {
+      return true
+    }
+
+    guard let startDate,
+      let metadata = fileMetadata(for: fileURL.standardizedFileURL, fileManager: fileManager)
+    else {
+      return false
+    }
+    return metadata.modificationTime >= startDate.timeIntervalSince1970
   }
 
   private static func claudeLogDirectories(
@@ -394,6 +422,15 @@ enum UsageDataScanner {
     formatter.timeZone = timeZone
     formatter.dateFormat = "yyyyMM"
     return "\(formatter.string(from: now))01"
+  }
+
+  private static func monthStartDate(from monthStart: String, timeZone: TimeZone) -> Date? {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = timeZone
+    formatter.dateFormat = "yyyyMMdd"
+    return formatter.date(from: monthStart)
   }
 
   private static func localDayString(now: Date, timeZone: TimeZone) -> String {

@@ -111,6 +111,16 @@ enum UsagePricing {
       cacheCreationInputTokenCostAbove200kTokens: nil,
       cacheReadInputTokenCostAbove200kTokens: nil
     ),
+    "gpt-5.5": ModelPricing(
+      inputCostPerToken: 0.000005,
+      outputCostPerToken: 0.00003,
+      cacheCreationInputTokenCost: nil,
+      cacheReadInputTokenCost: 0.0000005,
+      inputCostPerTokenAbove200kTokens: nil,
+      outputCostPerTokenAbove200kTokens: nil,
+      cacheCreationInputTokenCostAbove200kTokens: nil,
+      cacheReadInputTokenCostAbove200kTokens: nil
+    ),
   ]
 
   static func lookupPricing(

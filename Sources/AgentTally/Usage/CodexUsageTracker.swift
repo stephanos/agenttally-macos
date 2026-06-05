@@ -90,7 +90,11 @@ enum CodexUsageTracker {
     var nextCache = cache
     var activeCacheKeys = Set<String>()
 
-    for sessionFile in currentMonthSessionFiles(root: sessionsDirectory, sinceDate: sinceDate) {
+    for sessionFile in currentMonthSessionFiles(
+      root: sessionsDirectory,
+      sinceDate: sinceDate,
+      localDayFormatter: localDayFormatter
+    ) {
       let cacheKey = UsageFileCacheKey.path(for: sessionFile)
       guard
         let identity = UsageFileCacheKey.identity(
@@ -115,6 +119,7 @@ enum CodexUsageTracker {
           startingAt: UInt64(cached.identity.size),
           pricing: pricing,
           initialState: cached.parserState,
+          sinceDate: sinceDate,
           localDayFormatter: localDayFormatter,
           fractionalTimestampFormatter: fractionalTimestampFormatter,
           plainTimestampFormatter: plainTimestampFormatter
@@ -127,6 +132,7 @@ enum CodexUsageTracker {
           startingAt: 0,
           pricing: pricing,
           initialState: .empty,
+          sinceDate: sinceDate,
           localDayFormatter: localDayFormatter,
           fractionalTimestampFormatter: fractionalTimestampFormatter,
           plainTimestampFormatter: plainTimestampFormatter
@@ -143,7 +149,7 @@ enum CodexUsageTracker {
         )
       }
 
-      for (day, cost) in fileCostsByDate {
+      for (day, cost) in fileCostsByDate where day >= sinceDate {
         costsByDate[day, default: 0] += cost
       }
     }
@@ -166,6 +172,7 @@ enum CodexUsageTracker {
     startingAt offset: UInt64,
     pricing: [String: ModelPricing],
     initialState: CodexUsageParserState,
+    sinceDate: String,
     localDayFormatter: DateFormatter,
     fractionalTimestampFormatter: ISO8601DateFormatter,
     plainTimestampFormatter: ISO8601DateFormatter
@@ -224,13 +231,17 @@ enum CodexUsageTracker {
         return
       }
 
+      let day = formatLocalDay(timestampDate, formatter: localDayFormatter)
+      guard day >= sinceDate else {
+        return
+      }
+
       let cost = UsagePricing.calculateCodexCost(
         inputTokens: delta.inputTokens,
         cachedInputTokens: delta.cachedInputTokens,
         outputTokens: delta.outputTokens,
         pricing: modelPricing
       )
-      let day = formatLocalDay(timestampDate, formatter: localDayFormatter)
       costsByDate[day, default: 0] += cost
     }
 
@@ -271,7 +282,11 @@ enum CodexUsageTracker {
     .appendingPathComponent("sessions")
   }
 
-  private static func currentMonthSessionFiles(root: URL, sinceDate: String) -> [URL] {
+  private static func currentMonthSessionFiles(
+    root: URL,
+    sinceDate: String,
+    localDayFormatter: DateFormatter
+  ) -> [URL] {
     var files: [URL] = []
     let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
 
@@ -280,23 +295,59 @@ enum CodexUsageTracker {
         continue
       }
 
-      let components = next.pathComponents
-      guard let sessionsIndex = components.lastIndex(of: "sessions"),
-        components.count > sessionsIndex + 3
-      else {
-        continue
-      }
-
-      let year = components[sessionsIndex + 1]
-      let month = components[sessionsIndex + 2]
-      let day = components[sessionsIndex + 3]
-      let sessionDate = "\(year)-\(month)-\(day)"
-      if sessionDate >= sinceDate {
+      if shouldIncludeCurrentMonthSessionFile(
+        next,
+        sinceDate: sinceDate,
+        localDayFormatter: localDayFormatter
+      ) {
         files.append(next)
       }
     }
 
     return files
+  }
+
+  private static func shouldIncludeCurrentMonthSessionFile(
+    _ fileURL: URL,
+    sinceDate: String,
+    localDayFormatter: DateFormatter
+  ) -> Bool {
+    if let sessionDate = sessionDate(for: fileURL), sessionDate >= sinceDate {
+      return true
+    }
+
+    if let modificationDay = fileModificationDay(for: fileURL, formatter: localDayFormatter),
+      modificationDay >= sinceDate
+    {
+      return true
+    }
+
+    return false
+  }
+
+  private static func sessionDate(for fileURL: URL) -> String? {
+    let components = fileURL.pathComponents
+    guard let sessionsIndex = components.lastIndex(of: "sessions"),
+      components.count > sessionsIndex + 3
+    else {
+      return nil
+    }
+
+    let year = components[sessionsIndex + 1]
+    let month = components[sessionsIndex + 2]
+    let day = components[sessionsIndex + 3]
+    return "\(year)-\(month)-\(day)"
+  }
+
+  private static func fileModificationDay(for fileURL: URL, formatter: DateFormatter) -> String? {
+    guard
+      let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+      let modificationDate = attributes[.modificationDate] as? Date
+    else {
+      return nil
+    }
+
+    return formatLocalDay(modificationDate, formatter: formatter)
   }
 
   private static func makeLocalDayFormatter() -> DateFormatter {
