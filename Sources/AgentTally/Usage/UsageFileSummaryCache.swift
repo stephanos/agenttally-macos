@@ -33,15 +33,33 @@ struct CodexUsageFileSummaryCache: Sendable {
 
 struct CodexUsageFileSummary: Equatable, Sendable {
   let identity: UsageFileIdentity
-  let costsByDate: [String: Double]
+  // Cost per turn, keyed by the turn's id. A turn's events can be replayed into
+  // forked/resumed session files, so aggregation deduplicates on the turn id.
+  let turnCosts: [String: CodexTurnCost]
+  // Cost for token_count events that lack a turn id, keyed by local day. These
+  // cannot be deduplicated, but are negligible in practice.
+  let untrackedCostsByDate: [String: Double]
   let parserState: CodexUsageParserState
+}
+
+struct CodexTurnCost: Equatable, Sendable {
+  // Local day derived from the turn id's UUIDv7 timestamp (the turn's true
+  // creation time), so replayed turns keep their original day rather than the
+  // restamped timestamp of the fork.
+  let localDay: String
+  var cost: Double
 }
 
 struct CodexUsageParserState: Equatable, Sendable {
   let currentModel: String?
+  let currentTurnId: String?
   let previousTotals: CodexTokenTotals?
 
-  static let empty = CodexUsageParserState(currentModel: nil, previousTotals: nil)
+  static let empty = CodexUsageParserState(
+    currentModel: nil,
+    currentTurnId: nil,
+    previousTotals: nil
+  )
 }
 
 struct CodexTokenTotals: Equatable, Sendable {

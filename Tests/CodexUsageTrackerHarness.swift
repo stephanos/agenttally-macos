@@ -10,6 +10,140 @@ func testCodexUsageTracker() throws {
   try testCodexTrackerTreatsEmptyCodexHomeLikeDefault()
   try testCodexTrackerReusesUnchangedCachedFileSummary()
   try testCodexTrackerParsesOnlyAppendedCachedFileSuffix()
+  try testCodexTrackerDeduplicatesTurnsReplayedAcrossForkedSessions()
+  try testCodexTrackerAttributesTurnCostToTurnIdCreationDay()
+}
+
+// A turn's token_count events are copied verbatim into every forked/resumed
+// session file (with restamped timestamps), so the same turn id appears across
+// several files. Aggregation must count each turn only once.
+private func testCodexTrackerDeduplicatesTurnsReplayedAcrossForkedSessions() throws {
+  let homeDirectory = try makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: homeDirectory) }
+
+  let sessionsDirectory =
+    homeDirectory
+    .appendingPathComponent(".codex")
+    .appendingPathComponent("sessions")
+    .appendingPathComponent("2026")
+    .appendingPathComponent("05")
+    .appendingPathComponent("04")
+
+  // turn ids are UUIDv7: the first 48 bits encode the creation time (2026-05-04).
+  let sharedTurnId = "019df200-5000-7abc-8def-000000000001"
+  let forkOnlyTurnId = "019df237-3e80-7abc-8def-000000000001"
+
+  // The parent session records the shared turn.
+  try writeTestFile(
+    sessionsDirectory.appendingPathComponent("session-a.jsonl"),
+    contents: [
+      #"{"timestamp":"2026-05-04T08:00:00Z","type":"turn_context","payload":{"model":"gpt-5.5"}}"#,
+      #"{"timestamp":"2026-05-04T08:00:01Z","type":"event_msg","payload":{"type":"task_started","turn_id":"\#(sharedTurnId)"}}"#,
+      #"{"timestamp":"2026-05-04T08:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":250,"output_tokens":100}}}}"#,
+    ].joined(separator: "\n"),
+    modifiedAt: 10_000
+  )
+
+  // The fork replays the shared turn (restamped) and adds one new turn.
+  try writeTestFile(
+    sessionsDirectory.appendingPathComponent("session-b.jsonl"),
+    contents: [
+      #"{"timestamp":"2026-05-04T09:00:00Z","type":"turn_context","payload":{"model":"gpt-5.5"}}"#,
+      #"{"timestamp":"2026-05-04T09:00:01Z","type":"event_msg","payload":{"type":"task_started","turn_id":"\#(sharedTurnId)"}}"#,
+      #"{"timestamp":"2026-05-04T09:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":250,"output_tokens":100}}}}"#,
+      #"{"timestamp":"2026-05-04T09:02:00Z","type":"event_msg","payload":{"type":"task_started","turn_id":"\#(forkOnlyTurnId)"}}"#,
+      #"{"timestamp":"2026-05-04T09:03:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":2000,"cached_input_tokens":500,"output_tokens":200}}}}"#,
+    ].joined(separator: "\n"),
+    modifiedAt: 10_001
+  )
+
+  let raw = CodexUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: UsageTrackingContext(
+      environment: [:],
+      homeDirectory: homeDirectory,
+      now: codexTrackerNow,
+      pricingDataLoader: { _ in Data() }
+    )
+  )
+
+  let sharedTurnCost = UsagePricing.calculateCodexCost(
+    inputTokens: 1000,
+    cachedInputTokens: 250,
+    outputTokens: 100,
+    pricing: UsagePricing.bundled["gpt-5.5"]!
+  )
+  let forkOnlyTurnCost = UsagePricing.calculateCodexCost(
+    inputTokens: 2000,
+    cachedInputTokens: 500,
+    outputTokens: 200,
+    pricing: UsagePricing.bundled["gpt-5.5"]!
+  )
+
+  try expectNear(
+    raw.month,
+    sharedTurnCost + forkOnlyTurnCost,
+    "a turn replayed across forked sessions should be counted only once"
+  )
+}
+
+// A forked/resumed session restamps replayed events to the fork time, so a turn
+// that originally ran in a previous month can reappear with a current-month
+// timestamp. The turn id encodes the true creation time and must drive the day.
+private func testCodexTrackerAttributesTurnCostToTurnIdCreationDay() throws {
+  let homeDirectory = try makeTemporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: homeDirectory) }
+
+  let sessionFile =
+    homeDirectory
+    .appendingPathComponent(".codex")
+    .appendingPathComponent("sessions")
+    .appendingPathComponent("2026")
+    .appendingPathComponent("05")
+    .appendingPathComponent("04")
+    .appendingPathComponent("session.jsonl")
+
+  // A turn created 2026-04-15 (before `since`) replayed with 2026-05-04 stamps,
+  // plus a genuine 2026-05-04 turn.
+  let aprilTurnId = "019d9027-7c00-7abc-8def-000000000001"
+  let mayTurnId = "019df200-5000-7abc-8def-000000000001"
+
+  try writeTestFile(
+    sessionFile,
+    contents: [
+      #"{"timestamp":"2026-05-04T08:00:00Z","type":"turn_context","payload":{"model":"gpt-5.5"}}"#,
+      #"{"timestamp":"2026-05-04T08:00:01Z","type":"event_msg","payload":{"type":"task_started","turn_id":"\#(aprilTurnId)"}}"#,
+      #"{"timestamp":"2026-05-04T08:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":9000,"cached_input_tokens":0,"output_tokens":900}}}}"#,
+      #"{"timestamp":"2026-05-04T08:02:00Z","type":"event_msg","payload":{"type":"task_started","turn_id":"\#(mayTurnId)"}}"#,
+      #"{"timestamp":"2026-05-04T08:03:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":250,"output_tokens":100}}}}"#,
+    ].joined(separator: "\n"),
+    modifiedAt: codexTrackerNow.timeIntervalSince1970
+  )
+
+  let raw = CodexUsageTracker.load(
+    since: "20260501",
+    pricing: UsagePricing.bundled,
+    context: UsageTrackingContext(
+      environment: [:],
+      homeDirectory: homeDirectory,
+      now: codexTrackerNow,
+      pricingDataLoader: { _ in Data() }
+    )
+  )
+
+  let mayTurnCost = UsagePricing.calculateCodexCost(
+    inputTokens: 1000,
+    cachedInputTokens: 250,
+    outputTokens: 100,
+    pricing: UsagePricing.bundled["gpt-5.5"]!
+  )
+
+  try expectNear(
+    raw.month,
+    mayTurnCost,
+    "a replayed previous-month turn should not count toward the current month"
+  )
 }
 
 private let codexTrackerNow = Calendar.current.date(

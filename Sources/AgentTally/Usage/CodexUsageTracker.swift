@@ -87,6 +87,10 @@ enum CodexUsageTracker {
     let sinceDate = isoDateString(fromCompactDate: since)
     let pricingFingerprint = UsagePricingFingerprint.make(for: pricing)
     var costsByDate: [String: Double] = [:]
+    // A turn's token_count events are copied verbatim into every forked/resumed
+    // session file, so the same turn id can appear across many files. Counting
+    // each turn only once avoids massively over-counting heavily forked days.
+    var seenTurnIds = Set<String>()
     var nextCache = cache
     var activeCacheKeys = Set<String>()
 
@@ -106,50 +110,60 @@ enum CodexUsageTracker {
       }
       activeCacheKeys.insert(cacheKey)
 
-      let fileCostsByDate: [String: Double]
-      let parserState: CodexUsageParserState
+      let summary: CodexUsageFileSummary
       if let cached = nextCache.files[cacheKey], cached.identity == identity {
-        fileCostsByDate = cached.costsByDate
-        parserState = cached.parserState
+        summary = cached
       } else if let cached = nextCache.files[cacheKey],
         canParseAppendedSuffix(cached: cached.identity, current: identity)
       {
-        let parsed = parseCostsByDate(
+        let parsed = parseTurnCosts(
           from: sessionFile,
           startingAt: UInt64(cached.identity.size),
           pricing: pricing,
           initialState: cached.parserState,
-          sinceDate: sinceDate,
           localDayFormatter: localDayFormatter,
           fractionalTimestampFormatter: fractionalTimestampFormatter,
           plainTimestampFormatter: plainTimestampFormatter
         )
-        fileCostsByDate = mergeCosts(cached.costsByDate, parsed.costsByDate)
-        parserState = parsed.parserState
+        summary = CodexUsageFileSummary(
+          identity: identity,
+          turnCosts: mergeTurnCosts(cached.turnCosts, parsed.turnCosts),
+          untrackedCostsByDate: mergeCosts(
+            cached.untrackedCostsByDate,
+            parsed.untrackedCostsByDate
+          ),
+          parserState: parsed.parserState
+        )
       } else {
-        let parsed = parseCostsByDate(
+        let parsed = parseTurnCosts(
           from: sessionFile,
           startingAt: 0,
           pricing: pricing,
           initialState: .empty,
-          sinceDate: sinceDate,
           localDayFormatter: localDayFormatter,
           fractionalTimestampFormatter: fractionalTimestampFormatter,
           plainTimestampFormatter: plainTimestampFormatter
         )
-        fileCostsByDate = parsed.costsByDate
-        parserState = parsed.parserState
-      }
-
-      if nextCache.files[cacheKey]?.identity != identity {
-        nextCache.files[cacheKey] = CodexUsageFileSummary(
+        summary = CodexUsageFileSummary(
           identity: identity,
-          costsByDate: fileCostsByDate,
-          parserState: parserState
+          turnCosts: parsed.turnCosts,
+          untrackedCostsByDate: parsed.untrackedCostsByDate,
+          parserState: parsed.parserState
         )
       }
 
-      for (day, cost) in fileCostsByDate where day >= sinceDate {
+      if nextCache.files[cacheKey]?.identity != identity {
+        nextCache.files[cacheKey] = summary
+      }
+
+      for (turnId, turnCost) in summary.turnCosts {
+        guard seenTurnIds.insert(turnId).inserted, turnCost.localDay >= sinceDate else {
+          continue
+        }
+        costsByDate[turnCost.localDay, default: 0] += turnCost.cost
+      }
+
+      for (day, cost) in summary.untrackedCostsByDate where day >= sinceDate {
         costsByDate[day, default: 0] += cost
       }
     }
@@ -167,18 +181,23 @@ enum CodexUsageTracker {
     )
   }
 
-  private static func parseCostsByDate(
+  private static func parseTurnCosts(
     from sessionFile: URL,
     startingAt offset: UInt64,
     pricing: [String: ModelPricing],
     initialState: CodexUsageParserState,
-    sinceDate: String,
     localDayFormatter: DateFormatter,
     fractionalTimestampFormatter: ISO8601DateFormatter,
     plainTimestampFormatter: ISO8601DateFormatter
-  ) -> (costsByDate: [String: Double], parserState: CodexUsageParserState) {
-    var costsByDate: [String: Double] = [:]
+  ) -> (
+    turnCosts: [String: CodexTurnCost],
+    untrackedCostsByDate: [String: Double],
+    parserState: CodexUsageParserState
+  ) {
+    var turnCosts: [String: CodexTurnCost] = [:]
+    var untrackedCostsByDate: [String: Double] = [:]
     var currentModel = initialState.currentModel
+    var currentTurnId = initialState.currentTurnId
     var previousTotals = initialState.previousTotals.map(TokenUsage.init(totals:))
 
     JSONLLineReader.readLines(from: sessionFile, startingAt: offset) { line in
@@ -194,8 +213,20 @@ enum CodexUsageTracker {
       }
 
       guard entry["type"] as? String == "event_msg",
-        let payload = entry["payload"] as? [String: Any],
-        payload["type"] as? String == "token_count",
+        let payload = entry["payload"] as? [String: Any]
+      else {
+        return
+      }
+
+      // Each turn is bracketed by a task_started event carrying its id; the id is
+      // stable across replays, so it is used both to attribute the turn's day and
+      // to deduplicate turns copied into forked/resumed sessions.
+      if payload["type"] as? String == "task_started" {
+        currentTurnId = payload["turn_id"] as? String
+        return
+      }
+
+      guard payload["type"] as? String == "token_count",
         let timestamp = entry["timestamp"] as? String,
         let timestampDate = parseTimestamp(
           timestamp,
@@ -231,27 +262,52 @@ enum CodexUsageTracker {
         return
       }
 
-      let day = formatLocalDay(timestampDate, formatter: localDayFormatter)
-      guard day >= sinceDate else {
-        return
-      }
-
       let cost = UsagePricing.calculateCodexCost(
         inputTokens: delta.inputTokens,
         cachedInputTokens: delta.cachedInputTokens,
         outputTokens: delta.outputTokens,
         pricing: modelPricing
       )
-      costsByDate[day, default: 0] += cost
+
+      // Prefer the turn id's embedded creation time so a turn replayed into a
+      // later fork is still counted on the day it originally ran. Events without
+      // a turn id fall back to their own timestamp and are counted as-is.
+      if let turnId = currentTurnId {
+        let day =
+          localDay(fromTurnId: turnId, formatter: localDayFormatter)
+          ?? formatLocalDay(timestampDate, formatter: localDayFormatter)
+        turnCosts[turnId, default: CodexTurnCost(localDay: day, cost: 0)].cost += cost
+      } else {
+        let day = formatLocalDay(timestampDate, formatter: localDayFormatter)
+        untrackedCostsByDate[day, default: 0] += cost
+      }
     }
 
     return (
-      costsByDate,
+      turnCosts,
+      untrackedCostsByDate,
       CodexUsageParserState(
         currentModel: currentModel,
+        currentTurnId: currentTurnId,
         previousTotals: previousTotals?.totals
       )
     )
+  }
+
+  private static func mergeTurnCosts(
+    _ cached: [String: CodexTurnCost],
+    _ appended: [String: CodexTurnCost]
+  ) -> [String: CodexTurnCost] {
+    var merged = cached
+    for (turnId, turnCost) in appended {
+      if var existing = merged[turnId] {
+        existing.cost += turnCost.cost
+        merged[turnId] = existing
+      } else {
+        merged[turnId] = turnCost
+      }
+    }
+    return merged
   }
 
   private static func mergeCosts(
@@ -263,6 +319,17 @@ enum CodexUsageTracker {
       merged[day, default: 0] += cost
     }
     return merged
+  }
+
+  /// Decodes the local day from a UUIDv7 turn id, whose first 48 bits are the
+  /// creation time in milliseconds since the Unix epoch.
+  private static func localDay(fromTurnId turnId: String, formatter: DateFormatter) -> String? {
+    let hex = turnId.replacingOccurrences(of: "-", with: "").prefix(12)
+    guard hex.count == 12, let milliseconds = UInt64(hex, radix: 16) else {
+      return nil
+    }
+    let date = Date(timeIntervalSince1970: Double(milliseconds) / 1000)
+    return formatLocalDay(date, formatter: formatter)
   }
 
   private static func canParseAppendedSuffix(
@@ -304,7 +371,9 @@ enum CodexUsageTracker {
       }
     }
 
-    return files
+    // Session paths encode the start time (sessions/YYYY/MM/DD/rollout-<ts>-…),
+    // so sorting by path yields a stable chronological order for aggregation.
+    return files.sorted { $0.path < $1.path }
   }
 
   private static func shouldIncludeCurrentMonthSessionFile(
